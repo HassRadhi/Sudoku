@@ -1,11 +1,12 @@
 /** Versioned play-session document. Structural validation only — no Sudoku rules. */
 
+import type { Digits } from '../types'
 import type { KeyValueStore } from './index'
 
 /** localStorage key for the single in-progress session. */
 export const GAME_SESSION_KEY = 'sudoku.gameSession'
 
-export const GAME_SESSION_VERSION = 2
+export const GAME_SESSION_VERSION = 3
 
 /** Classic 9×9 cell count for document shape checks. */
 const CELL_COUNT = 81
@@ -35,13 +36,14 @@ export type SessionAnnotations = {
 }
 
 /**
- * Persisted play session (v2).
+ * Persisted play session (v3).
  *
  * Undo/redo history (past/future) is intentionally omitted: smaller payload,
  * simpler reload semantics, and history resets on refresh.
+ * Timer is always paused on load (`timerRunning` is not stored).
  */
-export type GameSessionV2 = {
-  version: 2
+export type GameSessionV3 = {
+  version: 3
   /** Original puzzle string (81 chars, '.' = empty). */
   puzzle: string
   /** Current board string (81 chars, '.' = empty). */
@@ -51,20 +53,30 @@ export type GameSessionV2 = {
   selected: number
   noteMode: boolean
   annotations: SessionAnnotations
+  activeDigit: Digits | null
+  elapsedMs: number
 }
 
-export type GameSession = GameSessionV2
+export type GameSession = GameSessionV3
+
+/** @deprecated Prefer GameSessionV3 — kept for migration typing. */
+export type GameSessionV2 = Omit<
+  GameSessionV3,
+  'version' | 'activeDigit' | 'elapsedMs'
+> & {
+  version: 2
+}
 
 export function emptySessionAnnotations(): SessionAnnotations {
   return { arrows: [], highlights: { cells: [], candidates: [] } }
 }
 
-export function serializeGameSession(session: GameSessionV2): string {
+export function serializeGameSession(session: GameSessionV3): string {
   return JSON.stringify(session)
 }
 
-/** Parse and validate a raw session string. Accepts v1 (empty annotations) and v2. */
-export function parseGameSession(raw: string): GameSessionV2 | null {
+/** Parse and validate a raw session string. Accepts v1–v3. */
+export function parseGameSession(raw: string): GameSessionV3 | null {
   let data: unknown
   try {
     data = JSON.parse(raw)
@@ -72,7 +84,9 @@ export function parseGameSession(raw: string): GameSessionV2 | null {
     return null
   }
   if (!isRecord(data)) return null
-  if (data.version !== 1 && data.version !== 2) return null
+  if (data.version !== 1 && data.version !== 2 && data.version !== 3) {
+    return null
+  }
   if (!isPuzzleString(data.puzzle) || !isPuzzleString(data.board)) return null
   if (!isNotesArray(data.notes)) return null
   if (!isCellIndex(data.selected)) return null
@@ -81,18 +95,27 @@ export function parseGameSession(raw: string): GameSessionV2 | null {
   const annotations = parseAnnotationsField(data.annotations)
   if (annotations === null) return null
 
+  const activeDigit =
+    data.version === 3 ? parseActiveDigit(data.activeDigit) : null
+  if (data.version === 3 && activeDigit === undefined) return null
+
+  const elapsedMs = data.version === 3 ? parseElapsedMs(data.elapsedMs) : 0
+  if (data.version === 3 && elapsedMs === null) return null
+
   return {
-    version: 2,
+    version: 3,
     puzzle: data.puzzle,
     board: data.board,
     notes: data.notes,
     selected: data.selected,
     noteMode: data.noteMode,
     annotations,
+    activeDigit: activeDigit ?? null,
+    elapsedMs: elapsedMs ?? 0,
   }
 }
 
-export function loadGameSession(store: KeyValueStore): GameSessionV2 | null {
+export function loadGameSession(store: KeyValueStore): GameSessionV3 | null {
   const raw = store.get(GAME_SESSION_KEY)
   if (raw === null) return null
   return parseGameSession(raw)
@@ -101,9 +124,34 @@ export function loadGameSession(store: KeyValueStore): GameSessionV2 | null {
 /** Persist a session. Store failures are absorbed by KeyValueStore. */
 export function saveGameSession(
   store: KeyValueStore,
-  session: GameSessionV2,
+  session: GameSessionV3,
 ): void {
   store.set(GAME_SESSION_KEY, serializeGameSession(session))
+}
+
+function parseActiveDigit(value: unknown): Digits | null | undefined {
+  if (value === null) return null
+  if (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 9
+  ) {
+    return value as Digits
+  }
+  return undefined
+}
+
+function parseElapsedMs(value: unknown): number | null {
+  if (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= Number.MAX_SAFE_INTEGER
+  ) {
+    return Math.floor(value)
+  }
+  return null
 }
 
 function parseAnnotationsField(value: unknown): SessionAnnotations | null {

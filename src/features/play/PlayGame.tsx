@@ -3,6 +3,7 @@ import { Board } from '../../components/Board'
 import { hitTestCandidate } from '../../components/candidateLayout'
 import {
   generatePuzzle,
+  isBoardComplete,
   isDigits,
   validateBoard,
   type DifficultyBand,
@@ -10,11 +11,15 @@ import {
 import {
   createLocalStorageStore,
   loadGameSession,
+  loadPlaySettings,
   saveGameSession,
+  savePlaySettings,
+  type PlaySettings,
 } from '../../storage'
 import type { Digits } from '../../types'
 import { AnnotationOverlay } from './AnnotationOverlay'
 import {
+  applyHintStep,
   createInitialPlayState,
   playReducer,
   playStateFromSession,
@@ -46,12 +51,24 @@ function isMod(event: KeyboardEvent): boolean {
   return event.ctrlKey || event.metaKey
 }
 
+function formatElapsed(ms: number): string {
+  const totalSec = Math.floor(ms / 1000)
+  const m = Math.floor(totalSec / 60)
+  const s = totalSec % 60
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
 export function PlayGame() {
   const [state, dispatch] = useReducer(playReducer, undefined, loadInitialPlayState)
   const [band, setBand] = useState<DifficultyBand>('easy')
+  const [settings, setSettings] = useState<PlaySettings>(() =>
+    loadPlaySettings(store),
+  )
   const [status, setStatus] = useState('')
+  const [liveMessage, setLiveMessage] = useState('')
   const [generating, setGenerating] = useState(false)
   const [cellSize, setCellSize] = useState(0)
+  const [timerRunning, setTimerRunning] = useState(false)
   const [preview, setPreview] = useState<{
     from: { cell: number; digit: Digits }
     to: { x: number; y: number }
@@ -60,11 +77,32 @@ export function PlayGame() {
   const shellRef = useRef<HTMLDivElement>(null)
   const dragFrom = useRef<{ cell: number; digit: Digits } | null>(null)
   const suppressNextSelect = useRef(false)
+  const elapsedRef = useRef(state.elapsedMs)
+  const runningSinceRef = useRef<number | null>(null)
+  const stateRef = useRef(state)
+  const settingsRef = useRef(settings)
+  const completeRef = useRef(false)
   const conflictCells = new Set(validateBoard(state.board).conflictCells)
+  const complete = isBoardComplete(state.board)
+  const timerActive = timerRunning && !complete
+
+  useEffect(() => {
+    stateRef.current = state
+    settingsRef.current = settings
+    completeRef.current = complete
+    elapsedRef.current = state.elapsedMs
+  }, [state, settings, complete])
 
   useEffect(() => {
     const flush = () => {
-      saveGameSession(store, sessionFromPlayState(state))
+      const live =
+        timerActive && runningSinceRef.current !== null
+          ? elapsedRef.current + (Date.now() - runningSinceRef.current)
+          : elapsedRef.current
+      saveGameSession(
+        store,
+        sessionFromPlayState({ ...stateRef.current, elapsedMs: live }),
+      )
     }
     const timer = window.setTimeout(flush, SAVE_DEBOUNCE_MS)
     window.addEventListener('pagehide', flush)
@@ -72,7 +110,11 @@ export function PlayGame() {
       window.clearTimeout(timer)
       window.removeEventListener('pagehide', flush)
     }
-  }, [state])
+  }, [state, timerActive])
+
+  useEffect(() => {
+    savePlaySettings(store, settings)
+  }, [settings])
 
   useEffect(() => {
     const shell = shellRef.current
@@ -89,20 +131,68 @@ export function PlayGame() {
   }, [])
 
   useEffect(() => {
+    if (!timerActive) {
+      runningSinceRef.current = null
+      return
+    }
+    runningSinceRef.current = Date.now()
+    const id = window.setInterval(() => {
+      const since = runningSinceRef.current
+      if (since === null) return
+      const now = Date.now()
+      const next = elapsedRef.current + (now - since)
+      runningSinceRef.current = now
+      elapsedRef.current = next
+      dispatch({ type: 'setElapsedMs', elapsedMs: next })
+    }, 1000)
+    return () => {
+      window.clearInterval(id)
+      if (runningSinceRef.current === null) return
+      const next =
+        elapsedRef.current + (Date.now() - runningSinceRef.current)
+      runningSinceRef.current = null
+      elapsedRef.current = next
+      dispatch({ type: 'setElapsedMs', elapsedMs: next })
+    }
+  }, [timerActive])
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (!document.hidden) return
+      if (runningSinceRef.current !== null) {
+        const next = elapsedRef.current + (Date.now() - runningSinceRef.current)
+        elapsedRef.current = next
+        runningSinceRef.current = null
+        dispatch({ type: 'setElapsedMs', elapsedMs: next })
+      }
+      setTimerRunning(false)
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
+
+  const markPlayed = () => {
+    if (!completeRef.current) setTimerRunning(true)
+  }
+
+  useEffect(() => {
     rootRef.current?.focus()
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || isTypingTarget(event.target)) return
+      const current = stateRef.current
 
       if (isMod(event) && !event.altKey) {
         const key = event.key.toLowerCase()
         if (key === 'z' && !event.shiftKey) {
           event.preventDefault()
+          markPlayed()
           dispatch({ type: 'undo' })
           return
         }
         if ((key === 'z' && event.shiftKey) || key === 'y') {
           event.preventDefault()
+          markPlayed()
           dispatch({ type: 'redo' })
           return
         }
@@ -111,19 +201,27 @@ export function PlayGame() {
       switch (event.key) {
         case 'ArrowUp':
           event.preventDefault()
+          markPlayed()
           dispatch({ type: 'move', dRow: -1, dCol: 0 })
           return
         case 'ArrowDown':
           event.preventDefault()
+          markPlayed()
           dispatch({ type: 'move', dRow: 1, dCol: 0 })
           return
         case 'ArrowLeft':
           event.preventDefault()
+          markPlayed()
           dispatch({ type: 'move', dRow: 0, dCol: -1 })
           return
         case 'ArrowRight':
           event.preventDefault()
+          markPlayed()
           dispatch({ type: 'move', dRow: 0, dCol: 1 })
+          return
+        case 'Escape':
+          event.preventDefault()
+          dispatch({ type: 'clearActiveDigit' })
           return
         default:
           break
@@ -133,15 +231,17 @@ export function PlayGame() {
 
       if (event.key === 'Delete' && event.shiftKey) {
         event.preventDefault()
+        markPlayed()
         dispatch({ type: 'clearAnnotations' })
         return
       }
 
       if (
         (event.key === 'Delete' || event.key === 'Backspace') &&
-        state.annotations.selectedArrowId !== null
+        current.annotations.selectedArrowId !== null
       ) {
         event.preventDefault()
+        markPlayed()
         dispatch({ type: 'deleteArrow' })
         return
       }
@@ -151,29 +251,59 @@ export function PlayGame() {
         case 'Delete':
         case '0':
           event.preventDefault()
+          markPlayed()
           dispatch({ type: 'clear' })
           return
         case 'n':
         case 'N':
           event.preventDefault()
+          markPlayed()
           dispatch({ type: 'toggleNoteMode' })
           return
-        case 'h':
-        case 'H':
+        case 'a':
+        case 'A':
           event.preventDefault()
-          dispatch({ type: 'toggleCellHighlight' })
+          markPlayed()
+          dispatch({ type: 'refillNotes' })
+          return
+        case 'h':
+        case 'H': {
+          event.preventDefault()
+          markPlayed()
+          const step = applyHintStep(current.board)
+          if (step === null) {
+            setLiveMessage('No hint')
+            return
+          }
+          dispatch({ type: 'applyHint', step })
+          setLiveMessage('Hint applied')
+          return
+        }
+        case 'r':
+        case 'R':
+          event.preventDefault()
+          setTimerRunning(false)
+          elapsedRef.current = 0
+          dispatch({
+            type: 'resetPuzzle',
+            autoNotes: settingsRef.current.autoNotes,
+          })
+          setStatus('Reset')
+          setLiveMessage('')
           return
         case '.':
           event.preventDefault()
+          markPlayed()
           dispatch({
             type: 'setArrowStyle',
-            style: state.arrowStyle === 'solid' ? 'dotted' : 'solid',
+            style: current.arrowStyle === 'solid' ? 'dotted' : 'solid',
           })
           return
         case ',': {
           event.preventDefault()
+          markPlayed()
           const order = ['a', 'b', 'c'] as const
-          const idx = order.indexOf(state.arrowColour)
+          const idx = order.indexOf(current.arrowColour)
           dispatch({
             type: 'setArrowColour',
             colour: order[(idx + 1) % order.length]!,
@@ -188,13 +318,14 @@ export function PlayGame() {
         const digit = Number(event.key)
         if (!isDigits(digit)) return
         event.preventDefault()
+        markPlayed()
         dispatch({ type: 'enterDigit', digit })
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [dispatch, state.annotations.selectedArrowId, state.arrowStyle, state.arrowColour])
+  }, [])
 
   const localPoint = (event: React.PointerEvent) => {
     const shell = shellRef.current
@@ -214,6 +345,7 @@ export function PlayGame() {
     const hit = hitTestCandidate(pt.x, pt.y, cellSize)
     if (!hit) return
     event.preventDefault()
+    markPlayed()
     suppressNextSelect.current = true
     dragFrom.current = hit
     setPreview({ from: hit, to: pt })
@@ -236,6 +368,7 @@ export function PlayGame() {
     if (!pt) return
     const hit = hitTestCandidate(pt.x, pt.y, cellSize)
     if (!hit) return
+    markPlayed()
     dispatch({ type: 'addArrow', from, to: hit })
   }
 
@@ -263,6 +396,7 @@ export function PlayGame() {
           onClick={() => {
             setGenerating(true)
             setStatus('Generating…')
+            setLiveMessage('')
             // Yield so the status paint lands before the sync search.
             window.setTimeout(() => {
               const result = generatePuzzle({
@@ -275,16 +409,64 @@ export function PlayGame() {
                 setStatus(result.error)
                 return
               }
-              dispatch({ type: 'loadPuzzle', puzzle: result.puzzle })
+              setTimerRunning(false)
+              elapsedRef.current = 0
+              dispatch({
+                type: 'loadPuzzle',
+                puzzle: result.puzzle,
+                autoNotes: settings.autoNotes,
+              })
               setStatus(`${result.band} puzzle`)
             }, 0)
           }}
         >
           New
         </button>
-        <span className="play-hint" aria-hidden="true">
-          Alt+drag arrow · h highlight · . style · , colour · Shift+Del clear
-        </span>
+        <button
+          type="button"
+          className="play-reset"
+          onClick={() => {
+            setTimerRunning(false)
+            elapsedRef.current = 0
+            dispatch({ type: 'resetPuzzle', autoNotes: settings.autoNotes })
+            setStatus('Reset')
+            setLiveMessage('')
+            rootRef.current?.focus()
+          }}
+        >
+          Reset
+        </button>
+        {settings.showTimer ? (
+          <span className="play-timer" aria-label="Elapsed time">
+            {formatElapsed(state.elapsedMs)}
+          </span>
+        ) : null}
+        <label className="play-setting">
+          <input
+            type="checkbox"
+            checked={settings.showTimer}
+            onChange={(event) =>
+              setSettings((prev) => ({
+                ...prev,
+                showTimer: event.target.checked,
+              }))
+            }
+          />
+          Timer
+        </label>
+        <label className="play-setting">
+          <input
+            type="checkbox"
+            checked={settings.autoNotes}
+            onChange={(event) =>
+              setSettings((prev) => ({
+                ...prev,
+                autoNotes: event.target.checked,
+              }))
+            }
+          />
+          Auto notes
+        </label>
         {status ? (
           <span className="play-status" role="status">
             {status}
@@ -292,7 +474,13 @@ export function PlayGame() {
         ) : null}
       </div>
       <span className="visually-hidden" aria-live="polite">
-        {state.noteMode ? 'Note mode' : 'Digit mode'}
+        {[
+          state.noteMode ? 'Note mode' : 'Digit mode',
+          complete ? 'Puzzle complete' : '',
+          liveMessage,
+        ]
+          .filter(Boolean)
+          .join('. ')}
       </span>
       <div
         ref={shellRef}
@@ -310,12 +498,15 @@ export function PlayGame() {
           notes={state.notes}
           givens={state.givens}
           selected={state.selected}
+          activeDigit={state.activeDigit}
+          hintFocus={state.hintFocus}
           conflictCells={conflictCells}
           onSelect={(index) => {
             if (suppressNextSelect.current) {
               suppressNextSelect.current = false
               return
             }
+            markPlayed()
             dispatch({ type: 'select', index })
             rootRef.current?.focus()
           }}

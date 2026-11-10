@@ -69,6 +69,7 @@ export {
   findSwordfish,
   findXWing,
   findXyWing,
+  findNextMove,
   hardestTechnique,
   moveChangesState,
   rateDifficulty,

@@ -15,7 +15,7 @@ export {
   TECHNIQUE_ORDER,
   TECHNIQUE_RANK,
 } from './catalogue'
-export { solveLogical } from './loop'
+export { findNextMove, solveLogical } from './loop'
 export {
   bandFromRank,
   hardestTechnique,

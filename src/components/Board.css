@@ -13,11 +13,16 @@
   --box-border: #1a1a1a;
   --cell-bg: #ffffff;
   --selected-bg: #dce8f5;
+  --unit-bg: #eef3f8;
+  --same-digit-bg: #d4e4f4;
+  --active-digit-bg: #c5daf0;
+  --hint-bg: #e8f5e4;
   --conflict-bg: #f5e4e2;
   --conflict-selected-bg: #e8d5d8;
   --given-color: #1a1a1a;
   --entry-color: #1a5fb4;
   --note-color: #5a5a55;
+  --note-active-color: #0b57a4;
   --cell-font: clamp(1rem, 4.2vw, 1.55rem);
   --note-font: clamp(0.4rem, 1.6vw, 0.62rem);
 
@@ -132,6 +137,18 @@
   line-height: 1;
 }
 
+.board-note--active {
+  color: var(--note-active-color);
+  font-weight: 700;
+}
+
+.board-note--hint {
+  color: #1a7a3a;
+  font-weight: 700;
+  background: color-mix(in srgb, #2ec27e 28%, transparent);
+  border-radius: 2px;
+}
+
 .board-cell:nth-child(3n) {
   border-right-color: var(--box-border);
   border-right-width: 2px;
@@ -149,6 +166,22 @@
 .board-cell--entry {
   color: var(--entry-color);
   font-weight: 500;
+}
+
+.board-cell--unit {
+  background: var(--unit-bg);
+}
+
+.board-cell--same-digit {
+  background: var(--same-digit-bg);
+}
+
+.board-cell--active-digit {
+  background: var(--active-digit-bg);
+}
+
+.board-cell--hint {
+  background: var(--hint-bg);
 }
 
 .board-cell--selected {
