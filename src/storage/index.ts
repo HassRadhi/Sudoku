@@ -60,6 +60,18 @@ export {
 export type {
   GameSession,
   GameSessionV2,
+  GameSessionV3,
   SessionAnnotations,
   SessionArrow,
 } from './gameSession'
+
+export {
+  DEFAULT_PLAY_SETTINGS,
+  PLAY_SETTINGS_KEY,
+  PLAY_SETTINGS_VERSION,
+  loadPlaySettings,
+  parsePlaySettings,
+  savePlaySettings,
+  serializePlaySettings,
+} from './playSettings'
+export type { PlaySettings, PlaySettingsV1 } from './playSettings'

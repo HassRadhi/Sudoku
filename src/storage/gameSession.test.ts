@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   GAME_SESSION_KEY,
   GAME_SESSION_VERSION,
-  type GameSessionV2,
+  type GameSessionV3,
   emptySessionAnnotations,
   loadGameSession,
   parseGameSession,
@@ -32,8 +32,8 @@ function createMemoryStore(
 }
 
 function sampleSession(
-  overrides: Partial<GameSessionV2> = {},
-): GameSessionV2 {
+  overrides: Partial<GameSessionV3> = {},
+): GameSessionV3 {
   const notes = Array.from({ length: 81 }, () => 0)
   notes[2] = 0b1000 // digit 4
   return {
@@ -45,6 +45,8 @@ function sampleSession(
     selected: 2,
     noteMode: true,
     annotations: emptySessionAnnotations(),
+    activeDigit: 4,
+    elapsedMs: 1500,
     ...overrides,
   }
 }
@@ -72,7 +74,7 @@ describe('gameSession', () => {
     expect(parsed).toEqual(session)
   })
 
-  it('migrates v1 empty annotations to v2', () => {
+  it('migrates v1 empty annotations to v3', () => {
     const v1 = {
       version: 1,
       puzzle: SAMPLE_PUZZLE,
@@ -84,13 +86,39 @@ describe('gameSession', () => {
     }
     const parsed = parseGameSession(JSON.stringify(v1))
     expect(parsed).toEqual({
-      version: 2,
+      version: 3,
       puzzle: SAMPLE_PUZZLE,
       board: SAMPLE_PUZZLE,
       notes: v1.notes,
       selected: 0,
       noteMode: false,
       annotations: emptySessionAnnotations(),
+      activeDigit: null,
+      elapsedMs: 0,
+    })
+  })
+
+  it('migrates v2 sessions with default activeDigit and elapsedMs', () => {
+    const v2 = {
+      version: 2,
+      puzzle: SAMPLE_PUZZLE,
+      board: SAMPLE_PUZZLE,
+      notes: Array.from({ length: 81 }, () => 0),
+      selected: 3,
+      noteMode: true,
+      annotations: emptySessionAnnotations(),
+    }
+    const parsed = parseGameSession(JSON.stringify(v2))
+    expect(parsed).toEqual({
+      version: 3,
+      puzzle: SAMPLE_PUZZLE,
+      board: SAMPLE_PUZZLE,
+      notes: v2.notes,
+      selected: 3,
+      noteMode: true,
+      annotations: emptySessionAnnotations(),
+      activeDigit: null,
+      elapsedMs: 0,
     })
   })
 
@@ -116,6 +144,16 @@ describe('gameSession', () => {
     ).toBeNull()
     expect(
       parseGameSession(JSON.stringify({ ...sampleSession(), selected: 81 })),
+    ).toBeNull()
+    expect(
+      parseGameSession(
+        JSON.stringify({ ...sampleSession(), activeDigit: 0 }),
+      ),
+    ).toBeNull()
+    expect(
+      parseGameSession(
+        JSON.stringify({ ...sampleSession(), elapsedMs: -1 }),
+      ),
     ).toBeNull()
     const badNotes = Array.from({ length: 81 }, () => 0)
     badNotes[0] = 0b10_0000_0000 // bit 9 out of note mask
