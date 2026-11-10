@@ -1,0 +1,8 @@
+.play-game {
+  outline: none;
+}
+
+.play-game:focus-visible .board {
+  outline: 2px solid #1a5fb4;
+  outline-offset: 3px;
+}
