@@ -20,7 +20,7 @@ Personal, offline-first Sudoku app. Not a commercial platform.
 - React `useReducer` for game state (no Redux/Zustand)
 - Browser `localStorage` via `src/storage` (no cloud)
 
-Tauri / Rust desktop packaging comes later, after the browser app works. Do not add it until requested.
+Tauri 2 desktop packaging lives in `src-tauri/`. Do not add mobile targets or rewrite the engine in Rust unless requested.
 
 Python is not part of this application.
 
@@ -67,4 +67,4 @@ Visual annotations (highlights, candidate arrows, overlays) must stay separate f
 
 ## Out of scope unless explicitly requested
 
-Accounts, sync, multiplayer, ads, analytics, backend services, Tauri/Rust packaging, Python tooling for the app itself.
+Accounts, sync, multiplayer, ads, analytics, backend services, iOS/mobile Tauri targets, Rust engine rewrite, Python tooling for the app itself.

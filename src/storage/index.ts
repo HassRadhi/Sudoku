@@ -51,9 +51,15 @@ export function createLocalStorageStore(
 export {
   GAME_SESSION_KEY,
   GAME_SESSION_VERSION,
+  emptySessionAnnotations,
   loadGameSession,
   parseGameSession,
   saveGameSession,
   serializeGameSession,
 } from './gameSession'
-export type { GameSessionV1 } from './gameSession'
+export type {
+  GameSession,
+  GameSessionV2,
+  SessionAnnotations,
+  SessionArrow,
+} from './gameSession'

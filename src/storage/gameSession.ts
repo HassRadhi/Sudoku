@@ -5,7 +5,7 @@ import type { KeyValueStore } from './index'
 /** localStorage key for the single in-progress session. */
 export const GAME_SESSION_KEY = 'sudoku.gameSession'
 
-export const GAME_SESSION_VERSION = 1
+export const GAME_SESSION_VERSION = 2
 
 /** Classic 9×9 cell count for document shape checks. */
 const CELL_COUNT = 81
@@ -13,14 +13,35 @@ const CELL_COUNT = 81
 /** Notes use one bit per digit 1–9 (bits 0–8). */
 const NOTE_MASK_MAX = 0b1_1111_1111
 
+export type SessionCandidateRef = {
+  cell: number
+  digit: number
+}
+
+export type SessionArrow = {
+  id: string
+  from: SessionCandidateRef
+  to: SessionCandidateRef
+  style: 'solid' | 'dotted'
+  colour: 'a' | 'b' | 'c'
+}
+
+export type SessionAnnotations = {
+  arrows: SessionArrow[]
+  highlights: {
+    cells: number[]
+    candidates: SessionCandidateRef[]
+  }
+}
+
 /**
- * Persisted play session (v1).
+ * Persisted play session (v2).
  *
  * Undo/redo history (past/future) is intentionally omitted: smaller payload,
  * simpler reload semantics, and history resets on refresh.
  */
-export type GameSessionV1 = {
-  version: 1
+export type GameSessionV2 = {
+  version: 2
   /** Original puzzle string (81 chars, '.' = empty). */
   puzzle: string
   /** Current board string (81 chars, '.' = empty). */
@@ -29,16 +50,21 @@ export type GameSessionV1 = {
   notes: number[]
   selected: number
   noteMode: boolean
-  /** Forward-compat placeholder; unused in v1. */
-  annotations: []
+  annotations: SessionAnnotations
 }
 
-export function serializeGameSession(session: GameSessionV1): string {
+export type GameSession = GameSessionV2
+
+export function emptySessionAnnotations(): SessionAnnotations {
+  return { arrows: [], highlights: { cells: [], candidates: [] } }
+}
+
+export function serializeGameSession(session: GameSessionV2): string {
   return JSON.stringify(session)
 }
 
-/** Parse and validate a raw session string. Returns null if corrupt/unsupported. */
-export function parseGameSession(raw: string): GameSessionV1 | null {
+/** Parse and validate a raw session string. Accepts v1 (empty annotations) and v2. */
+export function parseGameSession(raw: string): GameSessionV2 | null {
   let data: unknown
   try {
     data = JSON.parse(raw)
@@ -46,25 +72,27 @@ export function parseGameSession(raw: string): GameSessionV1 | null {
     return null
   }
   if (!isRecord(data)) return null
-  if (data.version !== GAME_SESSION_VERSION) return null
+  if (data.version !== 1 && data.version !== 2) return null
   if (!isPuzzleString(data.puzzle) || !isPuzzleString(data.board)) return null
   if (!isNotesArray(data.notes)) return null
   if (!isCellIndex(data.selected)) return null
   if (typeof data.noteMode !== 'boolean') return null
-  if (!Array.isArray(data.annotations)) return null
+
+  const annotations = parseAnnotationsField(data.annotations)
+  if (annotations === null) return null
 
   return {
-    version: 1,
+    version: 2,
     puzzle: data.puzzle,
     board: data.board,
     notes: data.notes,
     selected: data.selected,
     noteMode: data.noteMode,
-    annotations: [],
+    annotations,
   }
 }
 
-export function loadGameSession(store: KeyValueStore): GameSessionV1 | null {
+export function loadGameSession(store: KeyValueStore): GameSessionV2 | null {
   const raw = store.get(GAME_SESSION_KEY)
   if (raw === null) return null
   return parseGameSession(raw)
@@ -73,9 +101,67 @@ export function loadGameSession(store: KeyValueStore): GameSessionV1 | null {
 /** Persist a session. Store failures are absorbed by KeyValueStore. */
 export function saveGameSession(
   store: KeyValueStore,
-  session: GameSessionV1,
+  session: GameSessionV2,
 ): void {
   store.set(GAME_SESSION_KEY, serializeGameSession(session))
+}
+
+function parseAnnotationsField(value: unknown): SessionAnnotations | null {
+  // v1 placeholder: empty array
+  if (Array.isArray(value)) {
+    return value.length === 0 ? emptySessionAnnotations() : null
+  }
+  if (!isRecord(value)) return null
+  if (!Array.isArray(value.arrows) || !isRecord(value.highlights)) return null
+  if (
+    !Array.isArray(value.highlights.cells) ||
+    !Array.isArray(value.highlights.candidates)
+  ) {
+    return null
+  }
+
+  const arrows: SessionArrow[] = []
+  for (const item of value.arrows) {
+    if (!isRecord(item)) return null
+    if (typeof item.id !== 'string') return null
+    if (item.style !== 'solid' && item.style !== 'dotted') return null
+    if (item.colour !== 'a' && item.colour !== 'b' && item.colour !== 'c') {
+      return null
+    }
+    if (!isCandidateRef(item.from) || !isCandidateRef(item.to)) return null
+    arrows.push({
+      id: item.id,
+      from: { cell: item.from.cell, digit: item.from.digit },
+      to: { cell: item.to.cell, digit: item.to.digit },
+      style: item.style,
+      colour: item.colour,
+    })
+  }
+
+  const cells: number[] = []
+  for (const cell of value.highlights.cells) {
+    if (!isCellIndex(cell)) return null
+    cells.push(cell)
+  }
+
+  const candidates: SessionCandidateRef[] = []
+  for (const cand of value.highlights.candidates) {
+    if (!isCandidateRef(cand)) return null
+    candidates.push({ cell: cand.cell, digit: cand.digit })
+  }
+
+  return { arrows, highlights: { cells, candidates } }
+}
+
+function isCandidateRef(value: unknown): value is SessionCandidateRef {
+  if (!isRecord(value)) return false
+  return (
+    isCellIndex(value.cell) &&
+    typeof value.digit === 'number' &&
+    Number.isInteger(value.digit) &&
+    value.digit >= 1 &&
+    value.digit <= 9
+  )
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

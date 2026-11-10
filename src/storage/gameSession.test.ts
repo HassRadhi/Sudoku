@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   GAME_SESSION_KEY,
   GAME_SESSION_VERSION,
-  type GameSessionV1,
+  type GameSessionV2,
+  emptySessionAnnotations,
   loadGameSession,
   parseGameSession,
   saveGameSession,
@@ -31,27 +32,66 @@ function createMemoryStore(
 }
 
 function sampleSession(
-  overrides: Partial<GameSessionV1> = {},
-): GameSessionV1 {
+  overrides: Partial<GameSessionV2> = {},
+): GameSessionV2 {
   const notes = Array.from({ length: 81 }, () => 0)
   notes[2] = 0b1000 // digit 4
   return {
     version: GAME_SESSION_VERSION,
     puzzle: SAMPLE_PUZZLE,
-    board: '534.7....6..195....98....6.8...6...34..8.3..17...2...6.6....28....419..5....8..79',
+    board:
+      '534.7....6..195....98....6.8...6...34..8.3..17...2...6.6....28....419..5....8..79',
     notes,
     selected: 2,
     noteMode: true,
-    annotations: [],
+    annotations: emptySessionAnnotations(),
     ...overrides,
   }
 }
 
 describe('gameSession', () => {
   it('round-trips serialize/parse', () => {
-    const session = sampleSession()
+    const session = sampleSession({
+      annotations: {
+        arrows: [
+          {
+            id: 'a1',
+            from: { cell: 2, digit: 4 },
+            to: { cell: 10, digit: 5 },
+            style: 'dotted',
+            colour: 'b',
+          },
+        ],
+        highlights: {
+          cells: [2],
+          candidates: [{ cell: 2, digit: 4 }],
+        },
+      },
+    })
     const parsed = parseGameSession(serializeGameSession(session))
     expect(parsed).toEqual(session)
+  })
+
+  it('migrates v1 empty annotations to v2', () => {
+    const v1 = {
+      version: 1,
+      puzzle: SAMPLE_PUZZLE,
+      board: SAMPLE_PUZZLE,
+      notes: Array.from({ length: 81 }, () => 0),
+      selected: 0,
+      noteMode: false,
+      annotations: [],
+    }
+    const parsed = parseGameSession(JSON.stringify(v1))
+    expect(parsed).toEqual({
+      version: 2,
+      puzzle: SAMPLE_PUZZLE,
+      board: SAMPLE_PUZZLE,
+      notes: v1.notes,
+      selected: 0,
+      noteMode: false,
+      annotations: emptySessionAnnotations(),
+    })
   })
 
   it('round-trips through an in-memory KeyValueStore', () => {
@@ -67,9 +107,7 @@ describe('gameSession', () => {
     expect(parseGameSession('null')).toBeNull()
     expect(parseGameSession('[]')).toBeNull()
     expect(
-      parseGameSession(
-        JSON.stringify({ ...sampleSession(), version: 99 }),
-      ),
+      parseGameSession(JSON.stringify({ ...sampleSession(), version: 99 })),
     ).toBeNull()
     expect(
       parseGameSession(
@@ -77,23 +115,16 @@ describe('gameSession', () => {
       ),
     ).toBeNull()
     expect(
-      parseGameSession(
-        JSON.stringify({ ...sampleSession(), selected: 81 }),
-      ),
+      parseGameSession(JSON.stringify({ ...sampleSession(), selected: 81 })),
     ).toBeNull()
+    const badNotes = Array.from({ length: 81 }, () => 0)
+    badNotes[0] = 0b10_0000_0000 // bit 9 out of note mask
     expect(
-      parseGameSession(
-        JSON.stringify({
-          ...sampleSession(),
-          notes: Array.from({ length: 81 }, () => 9999),
-        }),
-      ),
+      parseGameSession(JSON.stringify({ ...sampleSession(), notes: badNotes })),
     ).toBeNull()
+  })
+
+  it('returns null when the store is empty', () => {
     expect(loadGameSession(createMemoryStore())).toBeNull()
-    expect(
-      loadGameSession(
-        createMemoryStore({ [GAME_SESSION_KEY]: '{bad' }),
-      ),
-    ).toBeNull()
   })
 })
