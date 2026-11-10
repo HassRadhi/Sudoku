@@ -2,11 +2,29 @@ import { useEffect, useReducer, useRef } from 'react'
 import { Board } from '../../components/Board'
 import { isDigits, validateBoard } from '../../engine'
 import {
+  createLocalStorageStore,
+  loadGameSession,
+  saveGameSession,
+} from '../../storage'
+import {
   SAMPLE_GIVENS,
   createInitialPlayState,
   playReducer,
+  playStateFromSession,
+  sessionFromPlayState,
 } from './playLogic'
 import './PlayGame.css'
+
+/** Debounce window for persisting meaningful play changes. */
+const SAVE_DEBOUNCE_MS = 300
+
+const store = createLocalStorageStore()
+
+function loadInitialPlayState() {
+  const session = loadGameSession(store)
+  if (session === null) return createInitialPlayState()
+  return playStateFromSession(session) ?? createInitialPlayState()
+}
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -19,9 +37,22 @@ function isMod(event: KeyboardEvent): boolean {
 }
 
 export function PlayGame() {
-  const [state, dispatch] = useReducer(playReducer, undefined, createInitialPlayState)
+  const [state, dispatch] = useReducer(playReducer, undefined, loadInitialPlayState)
   const rootRef = useRef<HTMLDivElement>(null)
   const conflictCells = new Set(validateBoard(state.board).conflictCells)
+
+  useEffect(() => {
+    const flush = () => {
+      saveGameSession(store, sessionFromPlayState(state))
+    }
+    const timer = window.setTimeout(flush, SAVE_DEBOUNCE_MS)
+    window.addEventListener('pagehide', flush)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('pagehide', flush)
+    }
+    // sessionFromPlayState ignores undo stacks; state is the meaningful trigger.
+  }, [state])
 
   useEffect(() => {
     rootRef.current?.focus()

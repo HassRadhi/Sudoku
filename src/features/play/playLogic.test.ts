@@ -17,6 +17,8 @@ import {
   moveSelection,
   placeDigit,
   playReducer,
+  playStateFromSession,
+  sessionFromPlayState,
   toggleNote,
 } from './playLogic'
 
@@ -189,6 +191,38 @@ describe('playReducer history', () => {
       state = playReducer(state, { type: 'enterDigit', digit })
     }
     expect(state.past).toHaveLength(HISTORY_LIMIT)
+  })
+})
+
+describe('play session hydrate', () => {
+  it('round-trips play state through a session without undo history', () => {
+    let state = createInitialPlayState()
+    state = playReducer(state, { type: 'select', index: 2 })
+    state = playReducer(state, { type: 'enterDigit', digit: 4 })
+    state = playReducer(state, { type: 'toggleNoteMode' })
+    expect(state.past.length).toBeGreaterThan(0)
+
+    const restored = playStateFromSession(sessionFromPlayState(state))
+    expect(restored).not.toBeNull()
+    expect(restored?.board).toEqual(state.board)
+    expect(restored?.notes).toEqual(state.notes)
+    expect(restored?.selected).toBe(2)
+    expect(restored?.noteMode).toBe(true)
+    expect(restored?.past).toEqual([])
+    expect(restored?.future).toEqual([])
+  })
+
+  it('rejects an unsupported puzzle identity', () => {
+    const session = sessionFromPlayState(createInitialPlayState())
+    session.puzzle = SAMPLE_PUZZLE.replace('5', '1')
+    expect(playStateFromSession(session)).toBeNull()
+  })
+
+  it('rejects a board that disagrees with puzzle givens', () => {
+    const session = sessionFromPlayState(createInitialPlayState())
+    // Index 0 is given '5' — clearing it yields an unplayable restore.
+    session.board = `.${session.board.slice(1)}`
+    expect(playStateFromSession(session)).toBeNull()
   })
 })
 
