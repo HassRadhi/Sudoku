@@ -65,7 +65,7 @@ describe('gameSession', () => {
           },
         ],
         highlights: {
-          cells: [2],
+          cells: [{ cell: 2, colour: 'c' }],
           candidates: [{ cell: 2, digit: 4 }],
         },
       },
@@ -164,5 +164,23 @@ describe('gameSession', () => {
 
   it('returns null when the store is empty', () => {
     expect(loadGameSession(createMemoryStore())).toBeNull()
+  })
+
+  it('migrates legacy bare highlight cell indexes to coloured cells', () => {
+    const legacy = {
+      ...sampleSession(),
+      annotations: {
+        arrows: [],
+        highlights: {
+          cells: [2, 11],
+          candidates: [],
+        },
+      },
+    }
+    const parsed = parseGameSession(JSON.stringify(legacy))
+    expect(parsed?.annotations.highlights.cells).toEqual([
+      { cell: 2, colour: 'a' },
+      { cell: 11, colour: 'a' },
+    ])
   })
 })

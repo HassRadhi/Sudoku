@@ -19,18 +19,25 @@ export type SessionCandidateRef = {
   digit: number
 }
 
+export type SessionArrowColour = 'a' | 'b' | 'c' | 'd' | 'e' | 'f'
+
 export type SessionArrow = {
   id: string
   from: SessionCandidateRef
   to: SessionCandidateRef
   style: 'solid' | 'dotted'
-  colour: 'a' | 'b' | 'c'
+  colour: SessionArrowColour
+}
+
+export type SessionCellHighlight = {
+  cell: number
+  colour: SessionArrowColour
 }
 
 export type SessionAnnotations = {
   arrows: SessionArrow[]
   highlights: {
-    cells: number[]
+    cells: SessionCellHighlight[]
     candidates: SessionCandidateRef[]
   }
 }
@@ -173,9 +180,7 @@ function parseAnnotationsField(value: unknown): SessionAnnotations | null {
     if (!isRecord(item)) return null
     if (typeof item.id !== 'string') return null
     if (item.style !== 'solid' && item.style !== 'dotted') return null
-    if (item.colour !== 'a' && item.colour !== 'b' && item.colour !== 'c') {
-      return null
-    }
+    if (!isArrowColour(item.colour)) return null
     if (!isCandidateRef(item.from) || !isCandidateRef(item.to)) return null
     arrows.push({
       id: item.id,
@@ -186,10 +191,17 @@ function parseAnnotationsField(value: unknown): SessionAnnotations | null {
     })
   }
 
-  const cells: number[] = []
-  for (const cell of value.highlights.cells) {
-    if (!isCellIndex(cell)) return null
-    cells.push(cell)
+  const cells: SessionCellHighlight[] = []
+  for (const item of value.highlights.cells) {
+    // Legacy: bare cell index → colour a.
+    if (typeof item === 'number') {
+      if (!isCellIndex(item)) return null
+      cells.push({ cell: item, colour: 'a' })
+      continue
+    }
+    if (!isRecord(item) || !isCellIndex(item.cell)) return null
+    if (!isArrowColour(item.colour)) return null
+    cells.push({ cell: item.cell, colour: item.colour })
   }
 
   const candidates: SessionCandidateRef[] = []
@@ -199,6 +211,17 @@ function parseAnnotationsField(value: unknown): SessionAnnotations | null {
   }
 
   return { arrows, highlights: { cells, candidates } }
+}
+
+function isArrowColour(value: unknown): value is SessionArrowColour {
+  return (
+    value === 'a' ||
+    value === 'b' ||
+    value === 'c' ||
+    value === 'd' ||
+    value === 'e' ||
+    value === 'f'
+  )
 }
 
 function isCandidateRef(value: unknown): value is SessionCandidateRef {

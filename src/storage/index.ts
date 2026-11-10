@@ -66,12 +66,21 @@ export type {
 } from './gameSession'
 
 export {
-  DEFAULT_PLAY_SETTINGS,
-  PLAY_SETTINGS_KEY,
-  PLAY_SETTINGS_VERSION,
-  loadPlaySettings,
-  parsePlaySettings,
-  savePlaySettings,
-  serializePlaySettings,
-} from './playSettings'
-export type { PlaySettings, PlaySettingsV1 } from './playSettings'
+  PUZZLE_SLOTS_KEY,
+  PUZZLE_SLOTS_VERSION,
+  SLOT_COUNT,
+  clearPuzzleSlot,
+  createEmptySlotsDocument,
+  emptyPuzzleSlots,
+  loadPuzzleSlots,
+  parsePuzzleSlots,
+  savePuzzleSlots,
+  serializePuzzleSlots,
+  writePuzzleSlot,
+} from './puzzleSlots'
+export type {
+  EmptyPuzzleSlot,
+  OccupiedPuzzleSlot,
+  PuzzleSlot,
+  PuzzleSlotsDocument,
+} from './puzzleSlots'

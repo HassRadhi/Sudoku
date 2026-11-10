@@ -154,7 +154,7 @@ describe('activeDigit and emphasis', () => {
 
     state = playReducer(state, { type: 'toggleNoteMode' })
     state = playReducer(state, { type: 'enterDigit', digit: 7 })
-    expect(state.activeDigit).toBeNull()
+    expect(state.activeDigit).toBe(7)
   })
 
   it('marks unit, same-digit, and active-digit cells', () => {
@@ -225,7 +225,7 @@ describe('reset puzzle', () => {
     state = playReducer(state, { type: 'select', index: 2 })
     state = playReducer(state, { type: 'enterDigit', digit: 4 })
     state = playReducer(state, { type: 'setElapsedMs', elapsedMs: 12_000 })
-    state = playReducer(state, { type: 'resetPuzzle', autoNotes: true })
+    state = playReducer(state, { type: 'resetPuzzle' })
     expect(state.board).toEqual(loadSampleBoard())
     expect(state.notes).toEqual(notesFromBoard(state.board))
     expect(state.past).toEqual([])
@@ -276,10 +276,13 @@ describe('playReducer history', () => {
 
     state = playReducer(state, { type: 'select', index: 2 })
     state = playReducer(state, { type: 'enterDigit', digit: 4 })
-    state = playReducer(state, { type: 'enterDigit', digit: 4 }) // same digit again
-    state = playReducer(state, { type: 'clear' })
+    expect(state.activeDigit).toBe(4)
+    state = playReducer(state, { type: 'enterDigit', digit: 4 }) // deselect + clear cell
+    expect(getCell(state.board, 2)).toBe(EMPTY)
+    expect(state.activeDigit).toBeNull()
+    expect(state.past).toHaveLength(2) // place + clear
     state = playReducer(state, { type: 'clear' }) // already empty
-    expect(state.past).toHaveLength(2) // place + clear only
+    expect(state.past).toHaveLength(2)
     state = playReducer(state, { type: 'undo' })
     expect(getCell(state.board, 0)).toBe(givenDigit)
   })
@@ -379,6 +382,7 @@ describe('play session hydrate', () => {
 describe('annotation history', () => {
   it('adds, deletes, clears arrows with undo', () => {
     let state = createInitialPlayState()
+    state = playReducer(state, { type: 'setArrowColour', colour: 'a' })
     state = playReducer(state, {
       type: 'addArrow',
       from: { cell: 2, digit: 4 },
@@ -406,15 +410,51 @@ describe('annotation history', () => {
     expect(state.annotations.arrows.length).toBeGreaterThan(0)
   })
 
+  it('toggles mark colour off when clicked again', () => {
+    let state = createInitialPlayState()
+    expect(state.arrowColour).toBeNull()
+    state = playReducer(state, { type: 'setArrowColour', colour: 'b' })
+    expect(state.arrowColour).toBe('b')
+    state = playReducer(state, { type: 'setArrowColour', colour: 'b' })
+    expect(state.arrowColour).toBeNull()
+    state = playReducer(state, {
+      type: 'addArrow',
+      from: { cell: 2, digit: 4 },
+      to: { cell: 10, digit: 5 },
+    })
+    expect(state.annotations.arrows).toHaveLength(0)
+  })
+
   it('toggles cell highlights with undo', () => {
     let state = createInitialPlayState()
+    state = playReducer(state, { type: 'setArrowColour', colour: 'b' })
     state = playReducer(state, { type: 'select', index: 2 })
     state = playReducer(state, { type: 'toggleCellHighlight' })
-    expect(state.annotations.highlights.cells).toEqual([2])
+    expect(state.annotations.highlights.cells).toEqual([
+      { cell: 2, colour: 'b' },
+    ])
     state = playReducer(state, { type: 'toggleCellHighlight' })
     expect(state.annotations.highlights.cells).toEqual([])
     state = playReducer(state, { type: 'undo' })
-    expect(state.annotations.highlights.cells).toEqual([2])
+    expect(state.annotations.highlights.cells).toEqual([
+      { cell: 2, colour: 'b' },
+    ])
+  })
+
+  it('previewHint then applyHint updates focus and board', () => {
+    let state = createInitialPlayState()
+    const before = state.board.slice()
+    const step = applyHintStep(state.board)
+    expect(step).not.toBeNull()
+    state = playReducer(state, { type: 'previewHint', move: step!.move })
+    expect(state.hintFocus?.cells).toEqual(step!.move.focusCells)
+    expect(state.board).toEqual(before)
+    state = playReducer(state, { type: 'applyHint', step: step! })
+    expect(state.board).toEqual(step!.board)
+    expect(state.notes).toEqual(step!.notes)
+    expect(state.hintFocus).not.toBeNull()
+    state = playReducer(state, { type: 'undo' })
+    expect(state.board).toEqual(before)
   })
 
   it('loadPuzzle replaces board, seeds notes, and clears history', () => {
@@ -431,7 +471,7 @@ describe('annotation history', () => {
       '.........' +
       '.........' +
       '.........'
-    state = playReducer(state, { type: 'loadPuzzle', puzzle, autoNotes: true })
+    state = playReducer(state, { type: 'loadPuzzle', puzzle })
     expect(state.puzzle).toBe(puzzle)
     expect(state.past).toEqual([])
     expect(state.annotations.arrows).toEqual([])

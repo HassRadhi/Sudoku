@@ -62,7 +62,8 @@ export type PlayState = {
   noteMode: boolean
   /** Arrow draw style for the next Alt+drag. */
   arrowStyle: ArrowStyle
-  arrowColour: ArrowColour
+  /** Selected mark colour; null = none selected. */
+  arrowColour: ArrowColour | null
   /** Last digit filter in digit mode; not part of undo history. */
   activeDigit: Digits | null
   /** Ephemeral solver focus; cleared on the next input. */
@@ -82,9 +83,14 @@ export type PlayAction =
   | { type: 'toggleNoteMode' }
   | { type: 'undo' }
   | { type: 'redo' }
-  | { type: 'loadPuzzle'; puzzle: string; autoNotes?: boolean }
-  | { type: 'resetPuzzle'; autoNotes?: boolean }
+  | { type: 'loadPuzzle'; puzzle: string }
+  | { type: 'resetPuzzle' }
   | { type: 'refillNotes' }
+  | { type: 'clearAllNotes' }
+  | {
+      type: 'previewHint'
+      move: SolveMove
+    }
   | {
       type: 'applyHint'
       step: { board: Board; notes: NotesGrid; move: SolveMove }
@@ -98,9 +104,9 @@ export type PlayAction =
   | { type: 'selectArrow'; id: string | null }
   | { type: 'deleteArrow' }
   | { type: 'clearAnnotations' }
-  | { type: 'toggleCellHighlight' }
+  | { type: 'toggleCellHighlight'; cell?: number }
   | { type: 'setArrowStyle'; style: ArrowStyle }
-  | { type: 'setArrowColour'; colour: ArrowColour }
+  | { type: 'setArrowColour'; colour: ArrowColour | null }
 
 export function loadSampleBoard(): Board {
   const parsed = parseBoard(SAMPLE_PUZZLE)
@@ -135,7 +141,7 @@ export function createInitialPlayState(): PlayState {
     selected: 0,
     noteMode: false,
     arrowStyle: 'solid',
-    arrowColour: 'a',
+    arrowColour: null,
     activeDigit: null,
     hintFocus: null,
     elapsedMs: 0,
@@ -168,7 +174,7 @@ export function playStateFromSession(session: GameSessionV3): PlayState | null {
     selected: session.selected,
     noteMode: session.noteMode,
     arrowStyle: 'solid',
-    arrowColour: 'a',
+    arrowColour: null,
     activeDigit: session.activeDigit,
     hintFocus: null,
     elapsedMs: session.elapsedMs,
@@ -266,6 +272,11 @@ export function toggleNote(
   return next
 }
 
+/** Next logical move without applying it. */
+export function peekHintMove(board: Board): SolveMove | null {
+  return findNextMove(board, computeCandidates(board))
+}
+
 /**
  * One logical solver step from board-derived candidates.
  * Notes are replaced with the post-move candidate grid.
@@ -278,6 +289,39 @@ export function applyHintStep(
   if (move === null) return null
   const next = applyMove({ board, candidates }, move)
   return { board: next.board, notes: next.candidates, move }
+}
+
+const TECHNIQUE_LABELS: Record<SolveMove['technique'], string> = {
+  naked_single: 'Naked single',
+  hidden_single: 'Hidden single',
+  locked_candidates: 'Locked candidates',
+  naked_pair: 'Naked pair',
+  hidden_pair: 'Hidden pair',
+  naked_triple: 'Naked triple',
+  hidden_triple: 'Hidden triple',
+  x_wing: 'X-Wing',
+  swordfish: 'Swordfish',
+  xy_wing: 'XY-Wing',
+}
+
+export function techniqueLabel(id: SolveMove['technique']): string {
+  return TECHNIQUE_LABELS[id]
+}
+
+/** Short explanation of placements/eliminations for a hint. */
+export function describeHintMove(move: SolveMove): string {
+  const parts: string[] = [techniqueLabel(move.technique)]
+  if (move.placements.length > 0) {
+    parts.push(
+      `place ${move.placements.map((p) => `${p.digit}@${p.cell + 1}`).join(', ')}`,
+    )
+  }
+  if (move.eliminations.length > 0) {
+    parts.push(
+      `eliminate ${move.eliminations.map((e) => `${e.digit}@${e.cell + 1}`).join(', ')}`,
+    )
+  }
+  return parts.join(' · ')
 }
 
 function snapshotOf(state: PlayState): PlaySnapshot {
@@ -324,23 +368,19 @@ function commitEdit(
   }
 }
 
-function startPuzzle(
-  puzzle: string,
-  autoNotes: boolean,
-  elapsedMs = 0,
-): PlayState | null {
+function startPuzzle(puzzle: string, elapsedMs = 0): PlayState | null {
   const parsed = parseBoard(puzzle)
   if (!parsed.ok) return null
   return {
     puzzle,
     givens: buildGivens(parsed.board),
     board: parsed.board,
-    notes: autoNotes ? notesFromBoard(parsed.board) : createEmptyNotes(),
+    notes: notesFromBoard(parsed.board),
     annotations: createEmptyAnnotations(),
     selected: 0,
     noteMode: false,
     arrowStyle: 'solid',
-    arrowColour: 'a',
+    arrowColour: null,
     activeDigit: null,
     hintFocus: null,
     elapsedMs,
@@ -367,18 +407,47 @@ export function playReducer(state: PlayState, action: PlayAction): PlayState {
         selected: moveSelection(state.selected, action.dRow, action.dCol),
       }
     case 'enterDigit': {
+      // Same digit again: drop the highlight filter (and clear a matching entry).
+      if (state.activeDigit === action.digit) {
+        if (state.noteMode) {
+          return {
+            ...withoutHint(state),
+            activeDigit: null,
+          }
+        }
+        if (getCell(state.board, state.selected) === action.digit) {
+          return commitEdit(
+            state,
+            {
+              ...clearCell(
+                state.board,
+                state.notes,
+                state.givens,
+                state.selected,
+              ),
+              annotations: state.annotations,
+            },
+            { activeDigit: null },
+          )
+        }
+        return { ...withoutHint(state), activeDigit: null }
+      }
       if (state.noteMode) {
-        return commitEdit(state, {
-          board: state.board,
-          notes: toggleNote(
-            state.board,
-            state.notes,
-            state.givens,
-            state.selected,
-            action.digit,
-          ),
-          annotations: state.annotations,
-        })
+        return commitEdit(
+          state,
+          {
+            board: state.board,
+            notes: toggleNote(
+              state.board,
+              state.notes,
+              state.givens,
+              state.selected,
+              action.digit,
+            ),
+            annotations: state.annotations,
+          },
+          { activeDigit: action.digit },
+        )
       }
       const placed = placeDigit(
         state.board,
@@ -432,16 +501,9 @@ export function playReducer(state: PlayState, action: PlayAction): PlayState {
       }
     }
     case 'loadPuzzle':
-      return (
-        startPuzzle(action.puzzle, action.autoNotes !== false) ??
-        withoutHint(state)
-      )
+      return startPuzzle(action.puzzle) ?? withoutHint(state)
     case 'resetPuzzle': {
-      const next = startPuzzle(
-        state.puzzle,
-        action.autoNotes !== false,
-        0,
-      )
+      const next = startPuzzle(state.puzzle, 0)
       if (next === null) return withoutHint(state)
       return {
         ...next,
@@ -461,6 +523,24 @@ export function playReducer(state: PlayState, action: PlayAction): PlayState {
         notes,
         annotations: state.annotations,
       })
+    }
+    case 'clearAllNotes': {
+      if (state.notes.every((mask) => mask === 0)) return withoutHint(state)
+      return commitEdit(state, {
+        board: state.board,
+        notes: createEmptyNotes(),
+        annotations: state.annotations,
+      })
+    }
+    case 'previewHint': {
+      const focus: HintFocus = {
+        cells: action.move.focusCells.slice(),
+        candidates: action.move.focusCandidates.map((c) => ({
+          cell: c.cell,
+          digit: c.digit,
+        })),
+      }
+      return { ...state, hintFocus: focus }
     }
     case 'applyHint': {
       const focus: HintFocus = {
@@ -484,11 +564,19 @@ export function playReducer(state: PlayState, action: PlayAction): PlayState {
       if (action.elapsedMs === state.elapsedMs) return state
       return { ...state, elapsedMs: action.elapsedMs }
     case 'toggleCellHighlight': {
-      const cell = state.selected
+      const cell = action.cell ?? state.selected
+      const colour = state.arrowColour
+      if (colour === null) return withoutHint(state)
       const cells = state.annotations.highlights.cells
-      const nextCells = cells.includes(cell)
-        ? cells.filter((c) => c !== cell)
-        : cells.concat(cell)
+      const existing = cells.find((h) => h.cell === cell)
+      let nextCells
+      if (existing === undefined) {
+        nextCells = cells.concat({ cell, colour })
+      } else if (existing.colour === colour) {
+        nextCells = cells.filter((h) => h.cell !== cell)
+      } else {
+        nextCells = cells.map((h) => (h.cell === cell ? { cell, colour } : h))
+      }
       return commitEdit(state, {
         board: state.board,
         notes: state.notes,
@@ -502,6 +590,7 @@ export function playReducer(state: PlayState, action: PlayAction): PlayState {
       })
     }
     case 'addArrow': {
+      if (state.arrowColour === null) return withoutHint(state)
       if (
         action.from.cell === action.to.cell &&
         action.from.digit === action.to.digit
@@ -566,7 +655,13 @@ export function playReducer(state: PlayState, action: PlayAction): PlayState {
     }
     case 'setArrowStyle':
       return { ...withoutHint(state), arrowStyle: action.style }
-    case 'setArrowColour':
-      return { ...withoutHint(state), arrowColour: action.colour }
+    case 'setArrowColour': {
+      const next =
+        action.colour !== null && action.colour === state.arrowColour
+          ? null
+          : action.colour
+      if (next === state.arrowColour) return withoutHint(state)
+      return { ...withoutHint(state), arrowColour: next }
+    }
   }
 }
