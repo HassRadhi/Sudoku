@@ -34,3 +34,20 @@ export {
   validateBoard,
 } from './validate'
 export type { Conflict, UnitKind, ValidationResult } from './validate'
+
+export {
+  ALL_CANDIDATES_MASK,
+  addCandidate,
+  computeCandidates,
+  digitBit,
+  getCandidateMask,
+  getCandidates,
+  hasCandidate,
+  isNakedSingleMask,
+  maskCount,
+  maskDigits,
+  maskHas,
+  recomputeCandidates,
+  removeCandidate,
+} from './candidates'
+export type { CandidateGrid } from './candidates'
