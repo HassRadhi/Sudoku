@@ -1,5 +1,13 @@
-.board {
+.board-shell {
   --board-size: min(92vw, 28rem);
+  --annotation-a: #c64600;
+  --annotation-b: #1a5fb4;
+  --annotation-c: #2ec27e;
+  position: relative;
+  width: var(--board-size);
+}
+
+.board {
   --board-border: #1a1a1a;
   --cell-border: #c8c8c0;
   --box-border: #1a1a1a;
@@ -13,10 +21,67 @@
   --cell-font: clamp(1rem, 4.2vw, 1.55rem);
   --note-font: clamp(0.4rem, 1.6vw, 0.62rem);
 
-  width: var(--board-size);
+  width: 100%;
   border: 2px solid var(--board-border);
   display: flex;
   flex-direction: column;
+}
+
+.annotation-overlay {
+  position: absolute;
+  /* Match .board 2px border so candidate anchors align with cells. */
+  inset: 2px;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.annotation-overlay .annotation-arrow {
+  pointer-events: stroke;
+  fill: none;
+  stroke-width: 2.5;
+  cursor: pointer;
+}
+
+.annotation-arrow--a {
+  stroke: var(--annotation-a);
+  fill: var(--annotation-a);
+}
+
+.annotation-arrow--b {
+  stroke: var(--annotation-b);
+  fill: var(--annotation-b);
+}
+
+.annotation-arrow--c {
+  stroke: var(--annotation-c);
+  fill: var(--annotation-c);
+}
+
+.annotation-arrow--dotted {
+  stroke-dasharray: 5 4;
+}
+
+.annotation-arrow--selected {
+  stroke-width: 3.5;
+}
+
+.annotation-arrow--preview {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.annotation-arrowhead {
+  stroke: none;
+}
+
+.annotation-cell-highlight {
+  fill: color-mix(in srgb, var(--annotation-a) 22%, transparent);
+  pointer-events: none;
+}
+
+.annotation-candidate-highlight {
+  fill: color-mix(in srgb, var(--annotation-b) 35%, transparent);
+  pointer-events: none;
 }
 
 .board-row {

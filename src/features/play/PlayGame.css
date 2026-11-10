@@ -1,8 +1,44 @@
 .play-game {
   outline: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: flex-start;
 }
 
 .play-game:focus-visible .board {
   outline: 2px solid #1a5fb4;
   outline-offset: 3px;
+}
+
+.play-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.play-band select,
+.play-new {
+  font: inherit;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #c8c8c0;
+  background: #fff;
+  color: #1a1a1a;
+}
+
+.play-new {
+  cursor: pointer;
+}
+
+.play-hint,
+.play-status {
+  color: #6a6a65;
+  font-size: 0.75rem;
+}
+
+.play-new:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }

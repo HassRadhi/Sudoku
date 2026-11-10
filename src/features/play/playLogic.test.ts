@@ -212,17 +212,98 @@ describe('play session hydrate', () => {
     expect(restored?.future).toEqual([])
   })
 
-  it('rejects an unsupported puzzle identity', () => {
-    const session = sessionFromPlayState(createInitialPlayState())
-    session.puzzle = SAMPLE_PUZZLE.replace('5', '1')
-    expect(playStateFromSession(session)).toBeNull()
-  })
-
   it('rejects a board that disagrees with puzzle givens', () => {
     const session = sessionFromPlayState(createInitialPlayState())
     // Index 0 is given '5' — clearing it yields an unplayable restore.
     session.board = `.${session.board.slice(1)}`
     expect(playStateFromSession(session)).toBeNull()
   })
+
+  it('hydrates a non-sample puzzle when givens match', () => {
+    const puzzle =
+      '1........' +
+      '.........' +
+      '.........' +
+      '.........' +
+      '.........' +
+      '.........' +
+      '.........' +
+      '.........' +
+      '.........'
+    const restored = playStateFromSession({
+      version: 2,
+      puzzle,
+      board: puzzle,
+      notes: Array.from({ length: 81 }, () => 0),
+      selected: 0,
+      noteMode: false,
+      annotations: { arrows: [], highlights: { cells: [], candidates: [] } },
+    })
+    expect(restored?.puzzle).toBe(puzzle)
+    expect(restored?.givens[0]).toBe(true)
+  })
 })
+
+describe('annotation history', () => {
+  it('adds, deletes, clears arrows with undo', () => {
+    let state = createInitialPlayState()
+    state = playReducer(state, {
+      type: 'addArrow',
+      from: { cell: 2, digit: 4 },
+      to: { cell: 10, digit: 5 },
+    })
+    expect(state.annotations.arrows).toHaveLength(1)
+    expect(state.past).toHaveLength(1)
+
+    const id = state.annotations.arrows[0]!.id
+    state = playReducer(state, { type: 'selectArrow', id })
+    state = playReducer(state, { type: 'deleteArrow' })
+    expect(state.annotations.arrows).toHaveLength(0)
+
+    state = playReducer(state, { type: 'undo' })
+    expect(state.annotations.arrows).toHaveLength(1)
+
+    state = playReducer(state, {
+      type: 'addArrow',
+      from: { cell: 3, digit: 1 },
+      to: { cell: 4, digit: 2 },
+    })
+    state = playReducer(state, { type: 'clearAnnotations' })
+    expect(state.annotations.arrows).toHaveLength(0)
+    state = playReducer(state, { type: 'undo' })
+    expect(state.annotations.arrows.length).toBeGreaterThan(0)
+  })
+
+  it('toggles cell highlights with undo', () => {
+    let state = createInitialPlayState()
+    state = playReducer(state, { type: 'select', index: 2 })
+    state = playReducer(state, { type: 'toggleCellHighlight' })
+    expect(state.annotations.highlights.cells).toEqual([2])
+    state = playReducer(state, { type: 'toggleCellHighlight' })
+    expect(state.annotations.highlights.cells).toEqual([])
+    state = playReducer(state, { type: 'undo' })
+    expect(state.annotations.highlights.cells).toEqual([2])
+  })
+
+  it('loadPuzzle replaces board and clears history', () => {
+    let state = createInitialPlayState()
+    state = playReducer(state, { type: 'select', index: 2 })
+    state = playReducer(state, { type: 'enterDigit', digit: 4 })
+    const puzzle =
+      '1........' +
+      '.........' +
+      '.........' +
+      '.........' +
+      '.........' +
+      '.........' +
+      '.........' +
+      '.........' +
+      '.........'
+    state = playReducer(state, { type: 'loadPuzzle', puzzle })
+    expect(state.puzzle).toBe(puzzle)
+    expect(state.past).toEqual([])
+    expect(state.annotations.arrows).toEqual([])
+  })
+})
+
 

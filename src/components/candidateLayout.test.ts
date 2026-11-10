@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { candidateSlotCentre, candidateSlotCentres } from './candidateLayout'
+import {
+  candidateAnchorInBoard,
+  candidateSlotCentre,
+  candidateSlotCentres,
+  hitTestCandidate,
+} from './candidateLayout'
 
 describe('candidateSlotCentres', () => {
   it('returns nine centres in a 3×3 layout for a square cell', () => {
@@ -31,5 +36,17 @@ describe('candidateSlotCentres', () => {
         candidateSlotCentre(digit as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9, size),
       )
     }
+  })
+
+  it('anchors candidates in board space and hit-tests nearest slot', () => {
+    const size = 90
+    expect(candidateAnchorInBoard(0, 1, size)).toEqual({ x: 15, y: 15 })
+    expect(candidateAnchorInBoard(10, 5, size)).toEqual({
+      x: 90 + 45,
+      y: 90 + 45,
+    })
+    const hit = hitTestCandidate(15, 15, size)
+    expect(hit).toEqual({ cell: 0, digit: 1 })
+    expect(hitTestCandidate(1000, 1000, size, size, 5)).toBeNull()
   })
 })

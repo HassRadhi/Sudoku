@@ -51,3 +51,45 @@ export {
   removeCandidate,
 } from './candidates'
 export type { CandidateGrid } from './candidates'
+
+export {
+  TECHNIQUES,
+  TECHNIQUE_ORDER,
+  TECHNIQUE_RANK,
+  applyMove,
+  applyMoves,
+  bandFromRank,
+  findHiddenPairs,
+  findHiddenSingles,
+  findHiddenTriples,
+  findLockedCandidates,
+  findNakedPairs,
+  findNakedSingles,
+  findNakedTriples,
+  findSwordfish,
+  findXWing,
+  findXyWing,
+  hardestTechnique,
+  moveChangesState,
+  rateDifficulty,
+  solveLogical,
+} from './solve'
+export type {
+  CandidateRef,
+  DifficultyBand,
+  Elimination,
+  Placement,
+  RateResult,
+  SolveMove,
+  SolveOutcome,
+  SolveState,
+  SolveStep,
+  Technique,
+  TechniqueId,
+} from './solve'
+
+export { uniquenessOf, countSolutions } from './search/unique'
+export type { Uniqueness } from './search/unique'
+
+export { createRng, fillGrid, generatePuzzle } from './generate'
+export type { GenerateOptions, GenerateResult } from './generate'
