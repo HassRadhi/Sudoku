@@ -8,9 +8,11 @@ import {
   getCell,
   parseBoard,
   rowOf,
+  serialiseBoard,
   setCell,
   type Board,
 } from '../../engine'
+import type { GameSessionV1 } from '../../storage'
 import type { Digits } from '../../types'
 
 /** Classic valid incomplete puzzle (Wikipedia sample). */
@@ -71,6 +73,45 @@ export function createInitialPlayState(): PlayState {
     noteMode: false,
     past: [],
     future: [],
+  }
+}
+
+/**
+ * Hydrate play state from a persisted session.
+ * Returns null if the puzzle is unsupported, the board string is invalid,
+ * or any given cell disagrees with the puzzle (corrupt / tampered save).
+ * Undo history is not restored (session omits it by design).
+ */
+export function playStateFromSession(session: GameSessionV1): PlayState | null {
+  // Milestone 6: only the sample puzzle is playable.
+  if (session.puzzle !== SAMPLE_PUZZLE) return null
+  const parsed = parseBoard(session.board)
+  if (!parsed.ok) return null
+  for (let i = 0; i < CELL_COUNT; i++) {
+    const ch = SAMPLE_PUZZLE[i]!
+    if (ch === '.') continue
+    if (parsed.board[i] !== Number(ch)) return null
+  }
+  return {
+    board: parsed.board,
+    notes: session.notes.slice(),
+    selected: session.selected,
+    noteMode: session.noteMode,
+    past: [],
+    future: [],
+  }
+}
+
+/** Snapshot current play into a v1 session document (no undo stacks). */
+export function sessionFromPlayState(state: PlayState): GameSessionV1 {
+  return {
+    version: 1,
+    puzzle: SAMPLE_PUZZLE,
+    board: serialiseBoard(state.board),
+    notes: state.notes.slice(),
+    selected: state.selected,
+    noteMode: state.noteMode,
+    annotations: [],
   }
 }
 

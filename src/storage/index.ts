@@ -47,3 +47,13 @@ export function createLocalStorageStore(
     },
   }
 }
+
+export {
+  GAME_SESSION_KEY,
+  GAME_SESSION_VERSION,
+  loadGameSession,
+  parseGameSession,
+  saveGameSession,
+  serializeGameSession,
+} from './gameSession'
+export type { GameSessionV1 } from './gameSession'
