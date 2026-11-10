@@ -18,14 +18,20 @@ describe('annotations persistence mapping', () => {
       },
     ]
     annotations.highlights = {
-      cells: [2, 11],
+      cells: [
+        { cell: 2, colour: 'a' },
+        { cell: 11, colour: 'b' },
+      ],
       candidates: [{ cell: 2, digit: 4 }],
     }
     annotations.selectedArrowId = 'a1'
 
     const session = annotationsToSession(annotations)
     expect(session.arrows).toHaveLength(1)
-    expect(session.highlights.cells).toEqual([2, 11])
+    expect(session.highlights.cells).toEqual([
+      { cell: 2, colour: 'a' },
+      { cell: 11, colour: 'b' },
+    ])
 
     const restored = annotationsFromSession(session)
     expect(restored.arrows).toEqual(annotations.arrows)

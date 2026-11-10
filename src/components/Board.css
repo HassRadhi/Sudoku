@@ -3,6 +3,9 @@
   --annotation-a: #c64600;
   --annotation-b: #1a5fb4;
   --annotation-c: #2ec27e;
+  --annotation-d: #c01c28;
+  --annotation-e: #813d9c;
+  --annotation-f: #e5a50a;
   position: relative;
   width: var(--board-size);
 }
@@ -62,6 +65,21 @@
   fill: var(--annotation-c);
 }
 
+.annotation-arrow--d {
+  stroke: var(--annotation-d);
+  fill: var(--annotation-d);
+}
+
+.annotation-arrow--e {
+  stroke: var(--annotation-e);
+  fill: var(--annotation-e);
+}
+
+.annotation-arrow--f {
+  stroke: var(--annotation-f);
+  fill: var(--annotation-f);
+}
+
 .annotation-arrow--dotted {
   stroke-dasharray: 5 4;
 }
@@ -80,8 +98,26 @@
 }
 
 .annotation-cell-highlight {
-  fill: color-mix(in srgb, var(--annotation-a) 22%, transparent);
   pointer-events: none;
+}
+
+.annotation-cell-highlight--a {
+  fill: color-mix(in srgb, var(--annotation-a) 28%, transparent);
+}
+.annotation-cell-highlight--b {
+  fill: color-mix(in srgb, var(--annotation-b) 28%, transparent);
+}
+.annotation-cell-highlight--c {
+  fill: color-mix(in srgb, var(--annotation-c) 28%, transparent);
+}
+.annotation-cell-highlight--d {
+  fill: color-mix(in srgb, var(--annotation-d) 28%, transparent);
+}
+.annotation-cell-highlight--e {
+  fill: color-mix(in srgb, var(--annotation-e) 28%, transparent);
+}
+.annotation-cell-highlight--f {
+  fill: color-mix(in srgb, var(--annotation-f) 28%, transparent);
 }
 
 .annotation-candidate-highlight {
@@ -139,7 +175,13 @@
 
 .board-note--active {
   color: var(--note-active-color);
-  font-weight: 700;
+  font-weight: 800;
+  background: color-mix(in srgb, #1a5fb4 22%, transparent);
+  border-radius: 2px;
+}
+
+.board-notes--filtered .board-note:not(.board-note--active):not(.board-note--hint) {
+  opacity: 0.22;
 }
 
 .board-note--hint {

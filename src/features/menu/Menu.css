@@ -1,0 +1,162 @@
+.menu {
+  width: min(40rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.menu-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.menu-title {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.menu-sub {
+  margin: 0;
+  color: #5a5a55;
+  font-size: 0.9rem;
+}
+
+.menu-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.menu-section-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.menu-new {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.band-toggle {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.band-toggle__btn,
+.menu-btn {
+  font: inherit;
+  border: 1px solid #c4c4bc;
+  background: #fff;
+  color: #1a1a1a;
+  border-radius: 0.35rem;
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+}
+
+.band-toggle__btn {
+  text-transform: capitalize;
+}
+
+.band-toggle__btn.is-active {
+  border-color: #1a5fb4;
+  background: #e8f0fa;
+  color: #123a6e;
+  font-weight: 600;
+}
+
+.menu-btn--primary {
+  background: #1a5fb4;
+  border-color: #1a5fb4;
+  color: #fff;
+  font-weight: 600;
+}
+
+.menu-btn--primary:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.menu-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: #3a5f8c;
+  padding-inline: 0.35rem;
+}
+
+.menu-btn--ghost:disabled {
+  color: #9a9a94;
+  cursor: not-allowed;
+}
+
+.menu-btn:focus-visible,
+.band-toggle__btn:focus-visible {
+  outline: 2px solid #1a5fb4;
+  outline-offset: 2px;
+}
+
+.menu-status,
+.menu-hint,
+.menu-footnote {
+  margin: 0;
+  color: #6a6a65;
+  font-size: 0.8rem;
+}
+
+.slot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+@media (max-width: 36rem) {
+  .slot-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.slot-card {
+  border: 1px solid #d2d2ca;
+  border-radius: 0.45rem;
+  background: #fafaf7;
+  padding: 0.65rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-height: 7rem;
+}
+
+.slot-card__label {
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #5a5a55;
+}
+
+.slot-card__meta {
+  font-size: 0.78rem;
+  color: #3a3a35;
+  line-height: 1.35;
+  flex: 1;
+}
+
+.slot-card__meta--empty {
+  color: #8a8a84;
+}
+
+.slot-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.slot-card__actions .menu-btn {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8rem;
+}

@@ -2,38 +2,41 @@ import { useEffect, useReducer, useRef, useState } from 'react'
 import { Board } from '../../components/Board'
 import { hitTestCandidate } from '../../components/candidateLayout'
 import {
+  applyMove,
+  computeCandidates,
   generatePuzzle,
   isBoardComplete,
   isDigits,
   validateBoard,
   type DifficultyBand,
+  type SolveMove,
 } from '../../engine'
 import {
   createLocalStorageStore,
   loadGameSession,
-  loadPlaySettings,
   saveGameSession,
-  savePlaySettings,
-  type PlaySettings,
 } from '../../storage'
 import type { Digits } from '../../types'
 import { AnnotationOverlay } from './AnnotationOverlay'
+import { ARROW_COLOURS, type ArrowColour } from './annotations'
 import {
-  applyHintStep,
   createInitialPlayState,
+  describeHintMove,
+  peekHintMove,
   playReducer,
   playStateFromSession,
   sessionFromPlayState,
+  techniqueLabel,
 } from './playLogic'
 import './PlayGame.css'
 import '../../components/Board.css'
 
-/** Debounce window for persisting meaningful play changes. */
 const SAVE_DEBOUNCE_MS = 300
-
 const BANDS: DifficultyBand[] = ['easy', 'medium', 'hard', 'expert']
-
+const DIGITS: Digits[] = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 const store = createLocalStorageStore()
+
+type DrawTool = 'highlight' | 'solid' | 'dotted'
 
 function loadInitialPlayState() {
   const session = loadGameSession(store)
@@ -58,15 +61,19 @@ function formatElapsed(ms: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-export function PlayGame() {
+type PlayGameProps = {
+  onMenu: () => void
+}
+
+export function PlayGame({ onMenu }: PlayGameProps) {
   const [state, dispatch] = useReducer(playReducer, undefined, loadInitialPlayState)
   const [band, setBand] = useState<DifficultyBand>('easy')
-  const [settings, setSettings] = useState<PlaySettings>(() =>
-    loadPlaySettings(store),
-  )
   const [status, setStatus] = useState('')
   const [liveMessage, setLiveMessage] = useState('')
   const [generating, setGenerating] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [drawTool, setDrawTool] = useState<DrawTool>('solid')
+  const [pendingHint, setPendingHint] = useState<SolveMove | null>(null)
   const [cellSize, setCellSize] = useState(0)
   const [timerRunning, setTimerRunning] = useState(false)
   const [preview, setPreview] = useState<{
@@ -75,23 +82,24 @@ export function PlayGame() {
   } | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const shellRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const dragFrom = useRef<{ cell: number; digit: Digits } | null>(null)
   const suppressNextSelect = useRef(false)
   const elapsedRef = useRef(state.elapsedMs)
   const runningSinceRef = useRef<number | null>(null)
   const stateRef = useRef(state)
-  const settingsRef = useRef(settings)
   const completeRef = useRef(false)
+  const pendingHintRef = useRef<SolveMove | null>(null)
   const conflictCells = new Set(validateBoard(state.board).conflictCells)
   const complete = isBoardComplete(state.board)
   const timerActive = timerRunning && !complete
 
   useEffect(() => {
     stateRef.current = state
-    settingsRef.current = settings
     completeRef.current = complete
     elapsedRef.current = state.elapsedMs
-  }, [state, settings, complete])
+    pendingHintRef.current = pendingHint
+  }, [state, complete, pendingHint])
 
   useEffect(() => {
     const flush = () => {
@@ -113,14 +121,9 @@ export function PlayGame() {
   }, [state, timerActive])
 
   useEffect(() => {
-    savePlaySettings(store, settings)
-  }, [settings])
-
-  useEffect(() => {
     const shell = shellRef.current
     if (!shell) return
     const measure = () => {
-      // Content box inside the board's 2px border (overlay uses inset: 2px).
       const width = shell.getBoundingClientRect().width - 4
       setCellSize(width / 9)
     }
@@ -171,8 +174,101 @@ export function PlayGame() {
     return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [])
 
+  useEffect(() => {
+    if (!menuOpen) return
+    const onPointer = (event: MouseEvent) => {
+      if (menuRef.current?.contains(event.target as Node)) return
+      setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onPointer)
+    return () => document.removeEventListener('mousedown', onPointer)
+  }, [menuOpen])
+
   const markPlayed = () => {
     if (!completeRef.current) setTimerRunning(true)
+  }
+
+  const flushAndMenu = () => {
+    const live =
+      timerActive && runningSinceRef.current !== null
+        ? elapsedRef.current + (Date.now() - runningSinceRef.current)
+        : elapsedRef.current
+    setTimerRunning(false)
+    saveGameSession(
+      store,
+      sessionFromPlayState({ ...stateRef.current, elapsedMs: live }),
+    )
+    onMenu()
+  }
+
+  const syncArrowStyle = (tool: DrawTool) => {
+    if (tool === 'solid' || tool === 'dotted') {
+      dispatch({ type: 'setArrowStyle', style: tool })
+    }
+  }
+
+  const runHint = () => {
+    markPlayed()
+    const current = stateRef.current
+    const pending = pendingHintRef.current
+    if (pending !== null) {
+      const candidates = computeCandidates(current.board)
+      const next = applyMove({ board: current.board, candidates }, pending)
+      dispatch({
+        type: 'applyHint',
+        step: {
+          board: next.board,
+          notes: next.candidates,
+          move: pending,
+        },
+      })
+      const detail = describeHintMove(pending)
+      setStatus(detail)
+      setLiveMessage(detail)
+      setPendingHint(null)
+      return
+    }
+    const move = peekHintMove(current.board)
+    if (move === null) {
+      setPendingHint(null)
+      setLiveMessage('No hint')
+      setStatus('No hint')
+      return
+    }
+    setPendingHint(move)
+    dispatch({ type: 'previewHint', move })
+    const label = techniqueLabel(move.technique)
+    setStatus(`${label} — hint again to apply`)
+    setLiveMessage(label)
+  }
+  const runHintRef = useRef(runHint)
+  useEffect(() => {
+    runHintRef.current = runHint
+  })
+
+  const runNewPuzzle = () => {
+    setMenuOpen(false)
+    setGenerating(true)
+    setStatus('Generating…')
+    setLiveMessage('')
+    setPendingHint(null)
+    window.setTimeout(() => {
+      const result = generatePuzzle({
+        band,
+        seed: Date.now() >>> 0,
+        maxAttempts: band === 'easy' ? 40 : 100,
+      })
+      setGenerating(false)
+      if (!result.ok) {
+        setStatus(result.error)
+        return
+      }
+      setTimerRunning(false)
+      elapsedRef.current = 0
+      dispatch({ type: 'loadPuzzle', puzzle: result.puzzle })
+      setStatus(`${result.band} puzzle`)
+      rootRef.current?.focus()
+    }, 0)
   }
 
   useEffect(() => {
@@ -187,12 +283,14 @@ export function PlayGame() {
         if (key === 'z' && !event.shiftKey) {
           event.preventDefault()
           markPlayed()
+          setPendingHint(null)
           dispatch({ type: 'undo' })
           return
         }
         if ((key === 'z' && event.shiftKey) || key === 'y') {
           event.preventDefault()
           markPlayed()
+          setPendingHint(null)
           dispatch({ type: 'redo' })
           return
         }
@@ -221,6 +319,8 @@ export function PlayGame() {
           return
         case 'Escape':
           event.preventDefault()
+          setPendingHint(null)
+          setMenuOpen(false)
           dispatch({ type: 'clearActiveDigit' })
           return
         default:
@@ -232,6 +332,7 @@ export function PlayGame() {
       if (event.key === 'Delete' && event.shiftKey) {
         event.preventDefault()
         markPlayed()
+        setPendingHint(null)
         dispatch({ type: 'clearAnnotations' })
         return
       }
@@ -252,6 +353,7 @@ export function PlayGame() {
         case '0':
           event.preventDefault()
           markPlayed()
+          setPendingHint(null)
           dispatch({ type: 'clear' })
           return
         case 'n':
@@ -264,52 +366,24 @@ export function PlayGame() {
         case 'A':
           event.preventDefault()
           markPlayed()
+          setPendingHint(null)
           dispatch({ type: 'refillNotes' })
           return
         case 'h':
-        case 'H': {
+        case 'H':
           event.preventDefault()
-          markPlayed()
-          const step = applyHintStep(current.board)
-          if (step === null) {
-            setLiveMessage('No hint')
-            return
-          }
-          dispatch({ type: 'applyHint', step })
-          setLiveMessage('Hint applied')
+          runHintRef.current()
           return
-        }
         case 'r':
         case 'R':
           event.preventDefault()
           setTimerRunning(false)
           elapsedRef.current = 0
-          dispatch({
-            type: 'resetPuzzle',
-            autoNotes: settingsRef.current.autoNotes,
-          })
+          setPendingHint(null)
+          dispatch({ type: 'resetPuzzle' })
           setStatus('Reset')
           setLiveMessage('')
           return
-        case '.':
-          event.preventDefault()
-          markPlayed()
-          dispatch({
-            type: 'setArrowStyle',
-            style: current.arrowStyle === 'solid' ? 'dotted' : 'solid',
-          })
-          return
-        case ',': {
-          event.preventDefault()
-          markPlayed()
-          const order = ['a', 'b', 'c'] as const
-          const idx = order.indexOf(current.arrowColour)
-          dispatch({
-            type: 'setArrowColour',
-            colour: order[(idx + 1) % order.length]!,
-          })
-          return
-        }
         default:
           break
       }
@@ -319,6 +393,7 @@ export function PlayGame() {
         if (!isDigits(digit)) return
         event.preventDefault()
         markPlayed()
+        setPendingHint(null)
         dispatch({ type: 'enterDigit', digit })
       }
     }
@@ -331,21 +406,25 @@ export function PlayGame() {
     const shell = shellRef.current
     if (!shell) return null
     const rect = shell.getBoundingClientRect()
-    // Overlay is inset by the 2px board border.
     return {
       x: event.clientX - rect.left - 2,
       y: event.clientY - rect.top - 2,
     }
   }
 
+  const arrowDrawing = drawTool === 'solid' || drawTool === 'dotted'
+
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!event.altKey || cellSize <= 0) return
+    const wantArrow = arrowDrawing || event.altKey
+    if (!wantArrow || cellSize <= 0 || state.arrowColour === null) return
     const pt = localPoint(event)
     if (!pt) return
     const hit = hitTestCandidate(pt.x, pt.y, cellSize)
     if (!hit) return
     event.preventDefault()
     markPlayed()
+    setPendingHint(null)
+    if (arrowDrawing) syncArrowStyle(drawTool)
     suppressNextSelect.current = true
     dragFrom.current = hit
     setPreview({ from: hit, to: pt })
@@ -375,104 +454,177 @@ export function PlayGame() {
   return (
     <div ref={rootRef} className="play-game" tabIndex={0}>
       <div className="play-toolbar" role="toolbar" aria-label="Puzzle controls">
-        <label className="play-band">
-          <span className="visually-hidden">Difficulty</span>
-          <select
-            value={band}
-            onChange={(event) => setBand(event.target.value as DifficultyBand)}
-            aria-label="Difficulty band"
-          >
-            {BANDS.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
-        </label>
         <button
           type="button"
-          className="play-new"
-          disabled={generating}
-          onClick={() => {
-            setGenerating(true)
-            setStatus('Generating…')
-            setLiveMessage('')
-            // Yield so the status paint lands before the sync search.
-            window.setTimeout(() => {
-              const result = generatePuzzle({
-                band,
-                seed: Date.now() >>> 0,
-                maxAttempts: band === 'easy' ? 40 : 100,
-              })
-              setGenerating(false)
-              if (!result.ok) {
-                setStatus(result.error)
-                return
-              }
-              setTimerRunning(false)
-              elapsedRef.current = 0
-              dispatch({
-                type: 'loadPuzzle',
-                puzzle: result.puzzle,
-                autoNotes: settings.autoNotes,
-              })
-              setStatus(`${result.band} puzzle`)
-            }, 0)
-          }}
+          className="play-btn"
+          title="Back to menu"
+          onClick={flushAndMenu}
         >
-          New
+          Menu
         </button>
+
+        <div className="play-overflow" ref={menuRef}>
+          <button
+            type="button"
+            className="play-btn play-hamburger"
+            title="More actions"
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <span className="play-hamburger__bar" />
+            <span className="play-hamburger__bar" />
+            <span className="play-hamburger__bar" />
+          </button>
+          {menuOpen ? (
+            <div className="play-overflow__menu" role="menu">
+              <div className="play-overflow__section" role="group" aria-label="Difficulty">
+                {BANDS.map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={band === b}
+                    className={
+                      band === b
+                        ? 'play-overflow__item is-active'
+                        : 'play-overflow__item'
+                    }
+                    onClick={() => setBand(b)}
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                role="menuitem"
+                className="play-overflow__item"
+                disabled={generating}
+                title="New puzzle"
+                onClick={runNewPuzzle}
+              >
+                New puzzle
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="play-overflow__item"
+                title="Reset puzzle (R)"
+                onClick={() => {
+                  setMenuOpen(false)
+                  setTimerRunning(false)
+                  elapsedRef.current = 0
+                  setPendingHint(null)
+                  dispatch({ type: 'resetPuzzle' })
+                  setStatus('Reset')
+                  setLiveMessage('')
+                  rootRef.current?.focus()
+                }}
+              >
+                Reset
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="play-overflow__item"
+                title="Undo (Ctrl+Z)"
+                onClick={() => {
+                  setMenuOpen(false)
+                  markPlayed()
+                  setPendingHint(null)
+                  dispatch({ type: 'undo' })
+                }}
+              >
+                Undo
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="play-overflow__item"
+                title="Redo (Ctrl+Y)"
+                onClick={() => {
+                  setMenuOpen(false)
+                  markPlayed()
+                  setPendingHint(null)
+                  dispatch({ type: 'redo' })
+                }}
+              >
+                Redo
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="play-overflow__item"
+                title="Recompute notes (A)"
+                onClick={() => {
+                  setMenuOpen(false)
+                  markPlayed()
+                  setPendingHint(null)
+                  dispatch({ type: 'refillNotes' })
+                  setStatus('Notes recomputed')
+                  rootRef.current?.focus()
+                }}
+              >
+                Recompute notes
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="play-overflow__item"
+                title="Clear all notes"
+                onClick={() => {
+                  setMenuOpen(false)
+                  markPlayed()
+                  setPendingHint(null)
+                  dispatch({ type: 'clearAllNotes' })
+                  setStatus('Notes cleared')
+                  rootRef.current?.focus()
+                }}
+              >
+                Clear all notes
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="play-overflow__item"
+                title="Clear annotations (Shift+Delete)"
+                onClick={() => {
+                  setMenuOpen(false)
+                  markPlayed()
+                  setPendingHint(null)
+                  dispatch({ type: 'clearAnnotations' })
+                }}
+              >
+                Clear marks
+              </button>
+            </div>
+          ) : null}
+        </div>
+
         <button
           type="button"
-          className="play-reset"
+          className={pendingHint ? 'play-btn is-active' : 'play-btn'}
+          title="Hint (H) — once for technique, twice for details"
           onClick={() => {
-            setTimerRunning(false)
-            elapsedRef.current = 0
-            dispatch({ type: 'resetPuzzle', autoNotes: settings.autoNotes })
-            setStatus('Reset')
-            setLiveMessage('')
+            runHint()
             rootRef.current?.focus()
           }}
         >
-          Reset
+          Hint
         </button>
-        {settings.showTimer ? (
-          <span className="play-timer" aria-label="Elapsed time">
-            {formatElapsed(state.elapsedMs)}
-          </span>
-        ) : null}
-        <label className="play-setting">
-          <input
-            type="checkbox"
-            checked={settings.showTimer}
-            onChange={(event) =>
-              setSettings((prev) => ({
-                ...prev,
-                showTimer: event.target.checked,
-              }))
-            }
-          />
-          Timer
-        </label>
-        <label className="play-setting">
-          <input
-            type="checkbox"
-            checked={settings.autoNotes}
-            onChange={(event) =>
-              setSettings((prev) => ({
-                ...prev,
-                autoNotes: event.target.checked,
-              }))
-            }
-          />
-          Auto notes
-        </label>
+
+        <span className="play-timer" aria-label="Elapsed time">
+          {formatElapsed(state.elapsedMs)}
+        </span>
+
         {status ? (
           <span className="play-status" role="status">
             {status}
           </span>
         ) : null}
       </div>
+
       <span className="visually-hidden" aria-live="polite">
         {[
           state.noteMode ? 'Note mode' : 'Digit mode',
@@ -482,49 +634,167 @@ export function PlayGame() {
           .filter(Boolean)
           .join('. ')}
       </span>
-      <div
-        ref={shellRef}
-        className="board-shell"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={() => {
-          dragFrom.current = null
-          setPreview(null)
-        }}
-      >
-        <Board
-          board={state.board}
-          notes={state.notes}
-          givens={state.givens}
-          selected={state.selected}
-          activeDigit={state.activeDigit}
-          hintFocus={state.hintFocus}
-          conflictCells={conflictCells}
-          onSelect={(index) => {
-            if (suppressNextSelect.current) {
-              suppressNextSelect.current = false
-              return
-            }
-            markPlayed()
-            dispatch({ type: 'select', index })
-            rootRef.current?.focus()
+
+      <div className="play-main">
+        <div
+          ref={shellRef}
+          className="board-shell"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={() => {
+            dragFrom.current = null
+            setPreview(null)
           }}
-        />
-        <AnnotationOverlay
-          annotations={state.annotations}
-          cellSize={cellSize}
-          preview={
-            preview
-              ? {
-                  ...preview,
-                  style: state.arrowStyle,
-                  colour: state.arrowColour,
+        >
+          <Board
+            board={state.board}
+            notes={state.notes}
+            givens={state.givens}
+            selected={state.selected}
+            activeDigit={state.activeDigit}
+            hintFocus={state.hintFocus}
+            conflictCells={conflictCells}
+            onSelect={(index) => {
+              if (suppressNextSelect.current) {
+                suppressNextSelect.current = false
+                return
+              }
+              markPlayed()
+              setPendingHint(null)
+              dispatch({ type: 'select', index })
+              if (drawTool === 'highlight') {
+                dispatch({ type: 'toggleCellHighlight', cell: index })
+              }
+              rootRef.current?.focus()
+            }}
+          />
+          <AnnotationOverlay
+            annotations={state.annotations}
+            cellSize={cellSize}
+            preview={
+              preview && state.arrowColour !== null
+                ? {
+                    ...preview,
+                    style: state.arrowStyle,
+                    colour: state.arrowColour,
+                  }
+                : null
+            }
+            onSelectArrow={(id) => dispatch({ type: 'selectArrow', id })}
+          />
+        </div>
+
+        <div className="play-side">
+          <div className="number-pad" role="group" aria-label="Number pad">
+            {DIGITS.map((digit) => (
+              <button
+                key={digit}
+                type="button"
+                className={
+                  state.activeDigit === digit
+                    ? 'number-pad__btn is-active'
+                    : 'number-pad__btn'
                 }
-              : null
-          }
-          onSelectArrow={(id) => dispatch({ type: 'selectArrow', id })}
-        />
+                title={`Enter ${digit} (again to deselect)`}
+                onClick={() => {
+                  markPlayed()
+                  setPendingHint(null)
+                  dispatch({ type: 'enterDigit', digit })
+                  rootRef.current?.focus()
+                }}
+              >
+                {digit}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={
+                state.noteMode
+                  ? 'number-pad__btn number-pad__btn--wide is-active'
+                  : 'number-pad__btn number-pad__btn--wide'
+              }
+              title="Toggle note mode (N)"
+              aria-pressed={state.noteMode}
+              onClick={() => {
+                markPlayed()
+                dispatch({ type: 'toggleNoteMode' })
+                rootRef.current?.focus()
+              }}
+            >
+              Notes
+            </button>
+          </div>
+
+          <div className="mark-pad" role="group" aria-label="Mark tools">
+            <button
+              type="button"
+              className={
+                drawTool === 'highlight'
+                  ? 'mark-pad__tool is-active'
+                  : 'mark-pad__tool'
+              }
+              title="Highlight cells"
+              aria-pressed={drawTool === 'highlight'}
+              onClick={() => setDrawTool('highlight')}
+            >
+              Fill
+            </button>
+            <button
+              type="button"
+              className={
+                drawTool === 'solid' ? 'mark-pad__tool is-active' : 'mark-pad__tool'
+              }
+              title="Solid arrows — drag between candidates"
+              aria-pressed={drawTool === 'solid'}
+              onClick={() => {
+                setDrawTool('solid')
+                dispatch({ type: 'setArrowStyle', style: 'solid' })
+              }}
+            >
+              Solid
+            </button>
+            <button
+              type="button"
+              className={
+                drawTool === 'dotted'
+                  ? 'mark-pad__tool is-active'
+                  : 'mark-pad__tool'
+              }
+              title="Dotted arrows — drag between candidates"
+              aria-pressed={drawTool === 'dotted'}
+              onClick={() => {
+                setDrawTool('dotted')
+                dispatch({ type: 'setArrowStyle', style: 'dotted' })
+              }}
+            >
+              Dotted
+            </button>
+          </div>
+
+          <div className="colour-pad" role="group" aria-label="Mark colours">
+            {ARROW_COLOURS.map((colour) => (
+              <button
+                key={colour}
+                type="button"
+                className={
+                  state.arrowColour === colour
+                    ? `colour-pad__swatch colour-pad__swatch--${colour} is-active`
+                    : `colour-pad__swatch colour-pad__swatch--${colour}`
+                }
+                title={`Colour ${colour.toUpperCase()} (again to deselect)`}
+                aria-label={`Colour ${colour}`}
+                aria-pressed={state.arrowColour === colour}
+                onClick={() =>
+                  dispatch({
+                    type: 'setArrowColour',
+                    colour: colour as ArrowColour,
+                  })
+                }
+              />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   )

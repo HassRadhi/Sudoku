@@ -7,7 +7,9 @@ export type CandidateRef = {
 }
 
 export type ArrowStyle = 'solid' | 'dotted'
-export type ArrowColour = 'a' | 'b' | 'c'
+export type ArrowColour = 'a' | 'b' | 'c' | 'd' | 'e' | 'f'
+
+export const ARROW_COLOURS: ArrowColour[] = ['a', 'b', 'c', 'd', 'e', 'f']
 
 export type AnnotationArrow = {
   id: string
@@ -17,8 +19,13 @@ export type AnnotationArrow = {
   colour: ArrowColour
 }
 
+export type CellHighlight = {
+  cell: number
+  colour: ArrowColour
+}
+
 export type AnnotationHighlights = {
-  cells: number[]
+  cells: CellHighlight[]
   candidates: CandidateRef[]
 }
 
@@ -49,7 +56,10 @@ export function annotationsToSession(
       colour: a.colour,
     })),
     highlights: {
-      cells: annotations.highlights.cells.slice(),
+      cells: annotations.highlights.cells.map((h) => ({
+        cell: h.cell,
+        colour: h.colour,
+      })),
       candidates: annotations.highlights.candidates.map((c) => ({
         cell: c.cell,
         digit: c.digit,
@@ -70,7 +80,10 @@ export function annotationsFromSession(
       colour: a.colour,
     })),
     highlights: {
-      cells: session.highlights.cells.slice(),
+      cells: session.highlights.cells.map((h) => ({
+        cell: h.cell,
+        colour: h.colour,
+      })),
       candidates: session.highlights.candidates.map((c) => ({
         cell: c.cell,
         digit: c.digit as Digits,

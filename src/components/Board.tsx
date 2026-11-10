@@ -82,7 +82,14 @@ export function Board({
                 onClick={() => onSelect(index)}
               >
                 {value === EMPTY ? (
-                  <span className="board-notes" aria-hidden="true">
+                  <span
+                    className={
+                      activeDigit !== null
+                        ? 'board-notes board-notes--filtered'
+                        : 'board-notes'
+                    }
+                    aria-hidden="true"
+                  >
                     {NOTE_SLOTS.map((digit) => {
                       const show = maskHas(noteMask, digit)
                       const isActiveNote =
