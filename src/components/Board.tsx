@@ -8,12 +8,20 @@ type BoardProps = {
   notes: readonly number[]
   givens: readonly boolean[]
   selected: number
+  conflictCells?: ReadonlySet<number>
   onSelect: (index: number) => void
 }
 
 const NOTE_SLOTS: Digits[] = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
-export function Board({ board, notes, givens, selected, onSelect }: BoardProps) {
+export function Board({
+  board,
+  notes,
+  givens,
+  selected,
+  conflictCells,
+  onSelect,
+}: BoardProps) {
   return (
     <div className="board" role="grid" aria-label="Sudoku board">
       {Array.from({ length: GRID_SIZE }, (_, row) => (
@@ -24,6 +32,7 @@ export function Board({ board, notes, givens, selected, onSelect }: BoardProps) 
             const noteMask = notes[index] ?? 0
             const isGiven = givens[index] === true
             const isSelected = index === selected
+            const isConflict = conflictCells?.has(index) === true
             const noteList = value === EMPTY ? maskDigits(noteMask) : []
 
             return (
@@ -36,11 +45,12 @@ export function Board({ board, notes, givens, selected, onSelect }: BoardProps) 
                   'board-cell',
                   isGiven ? 'board-cell--given' : 'board-cell--entry',
                   isSelected ? 'board-cell--selected' : '',
+                  isConflict ? 'board-cell--conflict' : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}
                 aria-selected={isSelected}
-                aria-label={cellAriaLabel(row, col, value, isGiven, noteList)}
+                aria-label={cellAriaLabel(row, col, value, isGiven, noteList, isConflict)}
                 onClick={() => onSelect(index)}
               >
                 {value === EMPTY ? (
@@ -69,10 +79,12 @@ function cellAriaLabel(
   value: number,
   isGiven: boolean,
   noteList: Digits[],
+  isConflict: boolean,
 ): string {
   const where = `Row ${row + 1}, column ${col + 1}`
+  const conflict = isConflict ? ', conflict' : ''
   if (value !== EMPTY) {
-    return `${where}, ${value}${isGiven ? ', given' : ''}`
+    return `${where}, ${value}${isGiven ? ', given' : ''}${conflict}`
   }
   if (noteList.length === 0) return `${where}, empty`
   return `${where}, notes ${noteList.join(' ')}`

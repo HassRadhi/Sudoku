@@ -5,6 +5,8 @@
   --box-border: #1a1a1a;
   --cell-bg: #ffffff;
   --selected-bg: #dce8f5;
+  --conflict-bg: #f5e4e2;
+  --conflict-selected-bg: #e8d5d8;
   --given-color: #1a1a1a;
   --entry-color: #1a5fb4;
   --note-color: #5a5a55;
@@ -86,6 +88,14 @@
 
 .board-cell--selected {
   background: var(--selected-bg);
+}
+
+.board-cell--conflict {
+  background: var(--conflict-bg);
+}
+
+.board-cell--selected.board-cell--conflict {
+  background: var(--conflict-selected-bg);
 }
 
 .board-cell:focus {

@@ -7,13 +7,16 @@ import {
   parseBoard,
 } from '../../engine'
 import {
+  HISTORY_LIMIT,
   SAMPLE_PUZZLE,
   buildGivens,
   clearCell,
   createEmptyNotes,
+  createInitialPlayState,
   loadSampleBoard,
   moveSelection,
   placeDigit,
+  playReducer,
   toggleNote,
 } from './playLogic'
 
@@ -89,4 +92,103 @@ describe('playLogic', () => {
     expect(notesOnly.notes[5]).toBe(0)
     expect(getCell(notesOnly.board, 5)).toBe(EMPTY)
   })
+
+  it('returns the same board/notes refs for content no-ops', () => {
+    const board = loadSampleBoard()
+    const givens = buildGivens(board)
+    const notes = createEmptyNotes()
+    const placed = placeDigit(board, notes, givens, 2, 4)
+
+    expect(placeDigit(placed.board, placed.notes, givens, 2, 4)).toEqual({
+      board: placed.board,
+      notes: placed.notes,
+    })
+    expect(clearCell(board, notes, givens, 2)).toEqual({ board, notes })
+  })
 })
+
+describe('playReducer history', () => {
+  it('undoes and redoes a placed digit', () => {
+    let state = createInitialPlayState()
+    state = playReducer(state, { type: 'select', index: 2 })
+    state = playReducer(state, { type: 'enterDigit', digit: 4 })
+    expect(getCell(state.board, 2)).toBe(4)
+    expect(state.past).toHaveLength(1)
+
+    state = playReducer(state, { type: 'undo' })
+    expect(getCell(state.board, 2)).toBe(EMPTY)
+    expect(state.past).toHaveLength(0)
+    expect(state.future).toHaveLength(1)
+
+    state = playReducer(state, { type: 'redo' })
+    expect(getCell(state.board, 2)).toBe(4)
+    expect(state.past).toHaveLength(1)
+    expect(state.future).toHaveLength(0)
+  })
+
+  it('undoes a note toggle', () => {
+    let state = createInitialPlayState()
+    state = playReducer(state, { type: 'toggleNoteMode' })
+    state = playReducer(state, { type: 'select', index: 2 })
+    state = playReducer(state, { type: 'enterDigit', digit: 4 })
+    expect(maskHas(state.notes[2] ?? 0, 4)).toBe(true)
+    expect(state.past).toHaveLength(1)
+
+    state = playReducer(state, { type: 'undo' })
+    expect(state.notes[2]).toBe(0)
+  })
+
+  it('keeps givens immutable and skips no-op edits in history', () => {
+    let state = createInitialPlayState()
+    const givenDigit = getCell(state.board, 0)
+    state = playReducer(state, { type: 'select', index: 0 })
+    state = playReducer(state, { type: 'enterDigit', digit: 9 })
+    state = playReducer(state, { type: 'clear' })
+    expect(getCell(state.board, 0)).toBe(givenDigit)
+    expect(state.past).toHaveLength(0)
+
+    state = playReducer(state, { type: 'select', index: 2 })
+    state = playReducer(state, { type: 'enterDigit', digit: 4 })
+    state = playReducer(state, { type: 'enterDigit', digit: 4 }) // same digit again
+    state = playReducer(state, { type: 'clear' })
+    state = playReducer(state, { type: 'clear' }) // already empty
+    expect(state.past).toHaveLength(2) // place + clear only
+    state = playReducer(state, { type: 'undo' })
+    expect(getCell(state.board, 0)).toBe(givenDigit)
+  })
+
+  it('clears redo future after a new edit', () => {
+    let state = createInitialPlayState()
+    state = playReducer(state, { type: 'select', index: 2 })
+    state = playReducer(state, { type: 'enterDigit', digit: 4 })
+    state = playReducer(state, { type: 'undo' })
+    expect(state.future).toHaveLength(1)
+
+    state = playReducer(state, { type: 'enterDigit', digit: 7 })
+    expect(getCell(state.board, 2)).toBe(7)
+    expect(state.future).toHaveLength(0)
+    expect(state.past).toHaveLength(1)
+  })
+
+  it('does not push selection or note-mode toggles onto history', () => {
+    let state = createInitialPlayState()
+    state = playReducer(state, { type: 'select', index: 5 })
+    state = playReducer(state, { type: 'move', dRow: 0, dCol: 1 })
+    state = playReducer(state, { type: 'toggleNoteMode' })
+    expect(state.selected).toBe(6)
+    expect(state.noteMode).toBe(true)
+    expect(state.past).toHaveLength(0)
+    expect(state.future).toHaveLength(0)
+  })
+
+  it(`caps undo depth at ${HISTORY_LIMIT}`, () => {
+    let state = createInitialPlayState()
+    state = playReducer(state, { type: 'select', index: 2 })
+    for (let i = 0; i < HISTORY_LIMIT + 25; i++) {
+      const digit = ((i % 9) + 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+      state = playReducer(state, { type: 'enterDigit', digit })
+    }
+    expect(state.past).toHaveLength(HISTORY_LIMIT)
+  })
+})
+
