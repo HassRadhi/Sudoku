@@ -4,10 +4,13 @@ import { isDigits, type Board as BoardModel } from '../../engine'
 import type { Digits } from '../../types'
 import {
   buildGivens,
-  clearDigit,
+  clearCell,
+  createEmptyNotes,
   loadSampleBoard,
   moveSelection,
-  setDigit,
+  placeDigit,
+  toggleNote,
+  type NotesGrid,
 } from './playLogic'
 import './PlayGame.css'
 
@@ -15,19 +18,24 @@ const GIVENS = buildGivens(loadSampleBoard())
 
 type PlayState = {
   board: BoardModel
+  notes: NotesGrid
   selected: number
+  noteMode: boolean
 }
 
 type PlayAction =
   | { type: 'select'; index: number }
   | { type: 'move'; dRow: number; dCol: number }
-  | { type: 'setDigit'; digit: Digits }
+  | { type: 'enterDigit'; digit: Digits }
   | { type: 'clear' }
+  | { type: 'toggleNoteMode' }
 
 function createInitialState(): PlayState {
   return {
     board: loadSampleBoard(),
+    notes: createEmptyNotes(),
     selected: 0,
+    noteMode: false,
   }
 }
 
@@ -40,16 +48,34 @@ function playReducer(state: PlayState, action: PlayAction): PlayState {
         ...state,
         selected: moveSelection(state.selected, action.dRow, action.dCol),
       }
-    case 'setDigit':
-      return {
-        ...state,
-        board: setDigit(state.board, GIVENS, state.selected, action.digit),
+    case 'enterDigit': {
+      if (state.noteMode) {
+        return {
+          ...state,
+          notes: toggleNote(
+            state.board,
+            state.notes,
+            GIVENS,
+            state.selected,
+            action.digit,
+          ),
+        }
       }
-    case 'clear':
-      return {
-        ...state,
-        board: clearDigit(state.board, GIVENS, state.selected),
-      }
+      const next = placeDigit(
+        state.board,
+        state.notes,
+        GIVENS,
+        state.selected,
+        action.digit,
+      )
+      return { ...state, board: next.board, notes: next.notes }
+    }
+    case 'clear': {
+      const next = clearCell(state.board, state.notes, GIVENS, state.selected)
+      return { ...state, board: next.board, notes: next.notes }
+    }
+    case 'toggleNoteMode':
+      return { ...state, noteMode: !state.noteMode }
   }
 }
 
@@ -87,11 +113,24 @@ export function PlayGame() {
           event.preventDefault()
           dispatch({ type: 'move', dRow: 0, dCol: 1 })
           return
+        default:
+          break
+      }
+
+      // Edits/toggles: ignore key-repeat so note XOR and mode flip don't oscillate.
+      if (event.repeat) return
+
+      switch (event.key) {
         case 'Backspace':
         case 'Delete':
         case '0':
           event.preventDefault()
           dispatch({ type: 'clear' })
+          return
+        case 'n':
+        case 'N':
+          event.preventDefault()
+          dispatch({ type: 'toggleNoteMode' })
           return
         default:
           break
@@ -101,7 +140,7 @@ export function PlayGame() {
         const digit = Number(event.key)
         if (!isDigits(digit)) return
         event.preventDefault()
-        dispatch({ type: 'setDigit', digit })
+        dispatch({ type: 'enterDigit', digit })
       }
     }
 
@@ -115,8 +154,12 @@ export function PlayGame() {
       className="play-game"
       tabIndex={0}
     >
+      <span className="visually-hidden" aria-live="polite">
+        {state.noteMode ? 'Note mode' : 'Digit mode'}
+      </span>
       <Board
         board={state.board}
+        notes={state.notes}
         givens={GIVENS}
         selected={state.selected}
         onSelect={(index) => {
