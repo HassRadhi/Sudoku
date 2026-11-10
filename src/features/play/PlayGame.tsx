@@ -1,83 +1,12 @@
 import { useEffect, useReducer, useRef } from 'react'
 import { Board } from '../../components/Board'
-import { isDigits, type Board as BoardModel } from '../../engine'
-import type { Digits } from '../../types'
+import { isDigits, validateBoard } from '../../engine'
 import {
-  buildGivens,
-  clearCell,
-  createEmptyNotes,
-  loadSampleBoard,
-  moveSelection,
-  placeDigit,
-  toggleNote,
-  type NotesGrid,
+  SAMPLE_GIVENS,
+  createInitialPlayState,
+  playReducer,
 } from './playLogic'
 import './PlayGame.css'
-
-const GIVENS = buildGivens(loadSampleBoard())
-
-type PlayState = {
-  board: BoardModel
-  notes: NotesGrid
-  selected: number
-  noteMode: boolean
-}
-
-type PlayAction =
-  | { type: 'select'; index: number }
-  | { type: 'move'; dRow: number; dCol: number }
-  | { type: 'enterDigit'; digit: Digits }
-  | { type: 'clear' }
-  | { type: 'toggleNoteMode' }
-
-function createInitialState(): PlayState {
-  return {
-    board: loadSampleBoard(),
-    notes: createEmptyNotes(),
-    selected: 0,
-    noteMode: false,
-  }
-}
-
-function playReducer(state: PlayState, action: PlayAction): PlayState {
-  switch (action.type) {
-    case 'select':
-      return { ...state, selected: action.index }
-    case 'move':
-      return {
-        ...state,
-        selected: moveSelection(state.selected, action.dRow, action.dCol),
-      }
-    case 'enterDigit': {
-      if (state.noteMode) {
-        return {
-          ...state,
-          notes: toggleNote(
-            state.board,
-            state.notes,
-            GIVENS,
-            state.selected,
-            action.digit,
-          ),
-        }
-      }
-      const next = placeDigit(
-        state.board,
-        state.notes,
-        GIVENS,
-        state.selected,
-        action.digit,
-      )
-      return { ...state, board: next.board, notes: next.notes }
-    }
-    case 'clear': {
-      const next = clearCell(state.board, state.notes, GIVENS, state.selected)
-      return { ...state, board: next.board, notes: next.notes }
-    }
-    case 'toggleNoteMode':
-      return { ...state, noteMode: !state.noteMode }
-  }
-}
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -85,9 +14,14 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable
 }
 
+function isMod(event: KeyboardEvent): boolean {
+  return event.ctrlKey || event.metaKey
+}
+
 export function PlayGame() {
-  const [state, dispatch] = useReducer(playReducer, undefined, createInitialState)
+  const [state, dispatch] = useReducer(playReducer, undefined, createInitialPlayState)
   const rootRef = useRef<HTMLDivElement>(null)
+  const conflictCells = new Set(validateBoard(state.board).conflictCells)
 
   useEffect(() => {
     rootRef.current?.focus()
@@ -95,6 +29,20 @@ export function PlayGame() {
     // Board-first app: keep keyboard play working even if focus leaves the grid.
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || isTypingTarget(event.target)) return
+
+      if (isMod(event) && !event.altKey) {
+        const key = event.key.toLowerCase()
+        if (key === 'z' && !event.shiftKey) {
+          event.preventDefault()
+          dispatch({ type: 'undo' })
+          return
+        }
+        if ((key === 'z' && event.shiftKey) || key === 'y') {
+          event.preventDefault()
+          dispatch({ type: 'redo' })
+          return
+        }
+      }
 
       switch (event.key) {
         case 'ArrowUp':
@@ -160,8 +108,9 @@ export function PlayGame() {
       <Board
         board={state.board}
         notes={state.notes}
-        givens={GIVENS}
+        givens={SAMPLE_GIVENS}
         selected={state.selected}
+        conflictCells={conflictCells}
         onSelect={(index) => {
           dispatch({ type: 'select', index })
           rootRef.current?.focus()
